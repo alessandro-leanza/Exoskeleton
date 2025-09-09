@@ -1,0 +1,4 @@
+string trajectory_type  # 'down' or 'up'
+---
+bool success
+string message

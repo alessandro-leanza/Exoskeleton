@@ -1,0 +1,4 @@
+float32 k
+---
+bool success
+string message

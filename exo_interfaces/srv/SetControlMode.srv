@@ -1,0 +1,4 @@
+int64 mode  # "torque" or "position"
+---
+bool success
+string message
