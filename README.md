@@ -3,4 +3,4 @@ La prima cosa da fare dopo source ambiente è la calibrazione. Prima cosa verifi
 
 Fatta la calibrazione i codici da runnare sono 1) 'ros2 run exo_control two_boards_exo_control' 2) 'ros2 run exo_control admittance_controller_perception_offset' 3) 'ros2 run exo_control stoop_trajs' (anche se per ora non fa nulla) 4)'cd exo_control/exo_control' 'python tobii.py' 
 
-L'ultima è l'applicazione degli occhiali, devi averli collegati col wifi, poi appena lanci l'applicazione selezioni l'occhiale nella prima schermata e poi nella seconda vai su Live e poi Start; al momento ho commentato la parte che dava label e bounding boxes di yolo perchè mi serviva per il video, se ne hai bisogno dimmi che guardo cosa va scommentato
+L'ultima è l'applicazione degli occhiali, devi averli collegati col wifi, poi appena lanci l'applicazione selezioni l'occhiale nella prima schermata e poi nella seconda vai su Live e poi Start; al momento ho commentato la parte che dava label e bounding boxes di yolo perchè mi serviva per il video, se ne hai bisogno dimmi che guardo cosa va scommentato (non farti problemi a scrivermi).
