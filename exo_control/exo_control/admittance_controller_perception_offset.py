@@ -120,22 +120,40 @@ class AdmittanceController(Node):
 
         # ---------- Parametri modello τ_w / τ_box ----------
         self.declare_parameter('g', 9.81)
-        self.declare_parameter('m_w', 25.0)          # [kg]
-        self.declare_parameter('l_w', 0.45)          # [m]
+        self.declare_parameter('m_w', (1-0.142-0.1*2-0.06*2) * 70.0)          # [kg] 25
+        self.declare_parameter('l_w', (0.72-0.53) * 1.80)          # [m] 0.45
         self.declare_parameter('m_b', 4.0)           # [kg]
         self.declare_parameter('l_int', 0.55)        # [m]
         self.declare_parameter('l_b', 0.20)          # [m]
-        self.declare_parameter('assist_max_nm', 20.0)
-        self.declare_parameter('coeff_assist', 1.0)
+        self.declare_parameter('assist_max_nm', 200.0)
+        self.declare_parameter('coeff_assist', 0.0)
         self.declare_parameter('theta_r_deadzone', 0.01)
         self.declare_parameter('perception_on', True)    # abilita τ_b
         self.declare_parameter('offset', 0.0)            # offset angolare per modello gravità
 
+        self.declare_parameter('tau_slew_rate', 80.0)  # [Nm/s] velocità massima variazione tau_ass
+        self.tau_slew_rate = float(self.get_parameter('tau_slew_rate').value)
+
+        # --- Slew-rate asimmetrico + ease-in sulla SALITA ---
+        self.declare_parameter('tau_slew_rate_up',   60.0)   # [Nm/s] salita max
+        self.declare_parameter('tau_slew_rate_down', 90.0)   # [Nm/s] discesa max
+        self.declare_parameter('tau_rise_ease_s',    0.25)   # [s] durata ease-in in salita
+        self.declare_parameter('tau_rise_min_fac',   0.25)   # fattore iniziale (0..1) del rate in salita
+
+        self.tau_slew_rate_up   = float(self.get_parameter('tau_slew_rate_up').value)
+        self.tau_slew_rate_down = float(self.get_parameter('tau_slew_rate_down').value)
+        self.tau_rise_ease_s    = float(self.get_parameter('tau_rise_ease_s').value)
+        self.tau_rise_min_fac   = float(self.get_parameter('tau_rise_min_fac').value)
+
+        # timestamp dell'ultima accensione assist (per ease-in)
+        self._assist_on_time = None
+
+
         # ---------- Soglie posture + dead-zones ----------
-        self.declare_parameter('theta_stand', 0.0)      # [rad]
-        self.declare_parameter('theta_bend',  0.4)     # [rad]
+        self.declare_parameter('theta_stand', 0.05)      # [rad]
+        self.declare_parameter('theta_bend', 0.7)  # [rad]
         self.declare_parameter('assist_margin', 0.01)   # [rad]
-        self.declare_parameter('assist_delay_s', 1.5)
+        self.declare_parameter('assist_delay_s', 0.5)
         self.assist_delay_s = float(self.get_parameter('assist_delay_s').value)
         self._rise_from_bend_t0 = None
 
@@ -144,10 +162,10 @@ class AdmittanceController(Node):
         self.declare_parameter('step_mode', True)
         self.declare_parameter('step_delta', 0.07)      # [rad]
         self.declare_parameter('step_K', 40.0)          # K piccola durante il lead
-        self.declare_parameter('step_min_speed', 0.1)  # [rad/s] (solo per lead reference)
+        self.declare_parameter('step_min_speed', 0.2)  # [rad/s] (solo per lead reference)
 
         # ---------- Scala τ_b per 2->3 (se vuoi) ----------
-        self.declare_parameter('box_scale_23', 0.2)
+        self.declare_parameter('box_scale_23', 1.0)
 
         # leggi parametri
         self.g = float(self.get_parameter('g').value)
@@ -227,7 +245,8 @@ class AdmittanceController(Node):
 
     # ===== Rampa τ_ass =====
     def _schedule_tau_ass(self, target: float, duration: float):
-        target = max(-self.assist_max_nm, min(self.assist_max_nm, float(target)))
+        # target = max(-self.assist_max_nm, min(self.assist_max_nm, float(target))) # con clamp 
+        target = float(target) # senza clamp
         now = self.get_clock().now()
         self.tau_ass_start  = float(self.tau_ass_current)
         self.tau_ass_target = target
@@ -235,19 +254,62 @@ class AdmittanceController(Node):
         self.tau_t1 = now + rclpy.duration.Duration(seconds=max(0.05, duration))
         self.tau_trj_active = True
 
+    # def _update_tau_ass_profile(self):
+    #     if not self.tau_trj_active:
+    #         return
+    #     now = self.get_clock().now()
+    #     if now >= self.tau_t1:
+    #         self.tau_ass_current = self.tau_ass_target
+    #         self.tau_trj_active = False
+    #     else:
+    #         num = (now - self.tau_t0).nanoseconds
+    #         den = (self.tau_t1 - self.tau_t0).nanoseconds
+    #         u = max(0.0, min(1.0, num/den)) if den > 0 else 1.0
+    #         s = u*u*(3 - 2*u)
+    #         self.tau_ass_current = self.tau_ass_start + (self.tau_ass_target - self.tau_ass_start)*s
+
+    # def _update_tau_ass_profile(self):
+    #     # Slew-rate limiter simmetrico (nessun reschedule, nessun smoothstep)
+    #     e = self.tau_ass_target - self.tau_ass_current
+    #     if e == 0.0:
+    #         return
+    #     max_step = self.tau_slew_rate * self.dt
+    #     if e > 0.0:
+    #         self.tau_ass_current += min(e, max_step)
+    #     else:
+    #         self.tau_ass_current += max(e, -max_step)
+
     def _update_tau_ass_profile(self):
-        if not self.tau_trj_active:
+        # Errore rispetto al target aggiornato ogni ciclo
+        e = self.tau_ass_target - self.tau_ass_current
+        if e == 0.0:
             return
-        now = self.get_clock().now()
-        if now >= self.tau_t1:
-            self.tau_ass_current = self.tau_ass_target
-            self.tau_trj_active = False
+
+        # Scegli rate base: salita vs discesa
+        if e > 0.0:
+            base_rate = self.tau_slew_rate_up
+            # Ease-in solo in SALITA e solo quando l'assistenza è ON
+            ease_fac = 1.0
+            if self.assist_active and self._assist_on_time is not None and self.tau_rise_ease_s > 1e-6:
+                now = self.get_clock().now()
+                t_elapsed = (now - self._assist_on_time).nanoseconds * 1e-9
+                u = max(0.0, min(1.0, t_elapsed / self.tau_rise_ease_s))
+                # smoothstep per arrivare da fac_min -> 1.0
+                s = u*u*(3.0 - 2.0*u)
+                fac_min = max(0.0, min(1.0, self.tau_rise_min_fac))
+                ease_fac = fac_min + (1.0 - fac_min) * s
+            eff_rate = base_rate * ease_fac
         else:
-            num = (now - self.tau_t0).nanoseconds
-            den = (self.tau_t1 - self.tau_t0).nanoseconds
-            u = max(0.0, min(1.0, num/den)) if den > 0 else 1.0
-            s = u*u*(3 - 2*u)
-            self.tau_ass_current = self.tau_ass_start + (self.tau_ass_target - self.tau_ass_start)*s
+            # discesa: nessun ease-in (o aggiungilo anche qui se vuoi)
+            eff_rate = self.tau_slew_rate_down
+
+        max_step = eff_rate * self.dt
+        if e > 0.0:
+            self.tau_ass_current += min(e, max_step)
+        else:
+            self.tau_ass_current += max(e, -max_step)
+
+
 
     # ===== Supporto: publish stato/assist =====
     def _publish_fsm_and_assist(self):
@@ -332,6 +394,7 @@ class AdmittanceController(Node):
 
             # Condizione 1: box_gate → ON immediato (non necessario per la ricetta peso,
             # ma lo usiamo come ulteriore "OR" come richiesto)
+            #if not self.box_gate:
             if self.box_gate:
                 self._activate_assist(self.RECIPE_WEIGHT, until='stand')
                 self._rise_from_bend_t0 = None
@@ -358,12 +421,26 @@ class AdmittanceController(Node):
 
 
     def _activate_assist(self, recipe_id: float, until: str, weight_scale: float = 1.0, box_scale: float = 1.0):
+        self._assist_on_time = self.get_clock().now()
         self.assist_active = True
         self.assist_recipe_id = recipe_id  # 0 none, 1 weight, 2 box, 3 both
         self.assist_until = until          # 'stand' o 'bend'
         self.curr_weight_scale = float(weight_scale)
         self.curr_box_scale    = float(box_scale)
         self.get_logger().info(f"[ASSIST] ON recipe={recipe_id} until={until} (w_scale={self.curr_weight_scale}, b_scale={self.curr_box_scale})")
+        self._publish_fsm_and_assist()
+
+    def _deactivate_assist(self):
+        self.assist_active = False
+        self.assist_recipe_id = self.RECIPE_NONE
+        self.assist_until = None
+        self.curr_weight_scale = 1.0
+        self.curr_box_scale    = 1.0
+        self.get_logger().info("[ASSIST] OFF (reached target)")
+
+        # self._schedule_tau_ass(0.0, self.tau_time_set)
+        self.tau_ass_target = 0.0
+
         self._publish_fsm_and_assist()
 
     def _maybe_stop_assist(self, theta_c: float):
@@ -381,15 +458,7 @@ class AdmittanceController(Node):
             if close and in_new_state:
                 self._deactivate_assist()
 
-    def _deactivate_assist(self):
-        self.assist_active = False
-        self.assist_recipe_id = self.RECIPE_NONE
-        self.assist_until = None
-        self.curr_weight_scale = 1.0
-        self.curr_box_scale    = 1.0
-        self.get_logger().info("[ASSIST] OFF (reached target)")
-        self._schedule_tau_ass(0.0, self.tau_time_set)
-        self._publish_fsm_and_assist()
+
 
     # ===== callback su box_gate =====
     def box_gate_callback(self, msg: Bool):
@@ -398,6 +467,12 @@ class AdmittanceController(Node):
         if (not self.box_gate) and new_val:
             if (self.state == self.BEND_TO_PICK) and (not self.assist_active):
                 self._activate_assist(self.RECIPE_BOTH, until='stand')
+
+        # fronte di discesa: True -> False → ON in stato 3 (rilascio pacco)
+        if self.box_gate and (not new_val):
+            if (self.state == self.BEND_TO_PLACE) and (not self.assist_active):
+                self._activate_assist(self.RECIPE_WEIGHT, until='stand')
+
         self.box_gate = new_val
 
     # ===== Callbacks vari =====
@@ -573,15 +648,24 @@ class AdmittanceController(Node):
 
         # Componenti gravitazionali (centrali)
         tau_w, tau_b_raw = self._compute_tau_components(theta_c)
-        # τ_b applicata solo se perception_on e box_gate sono veri
-        tau_b = (tau_b_raw if (self.perception_on and self.box_gate) else 0.0)
+
+        # # τ_b applicata solo se perception_on e box_gate sono veri
+        # tau_b = (tau_b_raw if (self.perception_on and self.box_gate) else 0.0)
+        # DOPO: calcolo sempre e pubblico SEMPRE il valore fisico calcolato
+        tau_b = tau_b_raw
+        self.tau_box_pub.publish(Float64(data=float(tau_b)))
 
         # Se assist attiva, seleziona ricetta; altrimenti 0
         tau_target = 0.0
         if self.assist_active:
+
+            # versione per la ricetta: entra solo se perception_on è True
+            tau_b_recipe = tau_b if self.perception_on else 0.0
+
             if self.assist_recipe_id in (self.RECIPE_WEIGHT, self.RECIPE_BOTH):
                 tau_target += self.curr_weight_scale * tau_w
             if self.assist_recipe_id in (self.RECIPE_BOX, self.RECIPE_BOTH):
+                # tau_target += self.curr_box_scale * tau_b
                 tau_target += self.curr_box_scale * tau_b
 
             # Deadzone vicino a θ_r≈0 (anti-jitter)
@@ -596,12 +680,13 @@ class AdmittanceController(Node):
 
         # Gain + clamp
         tau_target *= self.coeff_assist
-        tau_target = max(-self.assist_max_nm, min(self.assist_max_nm, tau_target))
+        # tau_target = max(-self.assist_max_nm, min(self.assist_max_nm, tau_target)) # per il clamp, se no commenta questa riga
 
         # Rampa τ_ass se cambia abbastanza
-        if (abs(tau_target - self.tau_ass_target) > self.tau_resched_eps) or \
-           (not self.tau_trj_active and abs(tau_target - self.tau_ass_current) > self.tau_resched_eps):
-            self._schedule_tau_ass(tau_target, self.tau_time_set)
+        # if (abs(tau_target - self.tau_ass_target) > self.tau_resched_eps) or \
+        #    (not self.tau_trj_active and abs(tau_target - self.tau_ass_current) > self.tau_resched_eps):
+        #     self._schedule_tau_ass(tau_target, self.tau_time_set)
+        self.tau_ass_target = float(tau_target)
 
         # τ_ass applicata (centrale) e per-giunto
         tau_ass_applied = self.tau_ass_current

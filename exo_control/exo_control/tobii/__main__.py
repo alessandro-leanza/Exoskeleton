@@ -62,7 +62,8 @@ WARMUP = 20
 TRIGGER_PERCENTAGE_NOT_GRASPED = 0.7
 TRIGGER_PERCENTAGE_GRASPED = 0.4
 
-YOLO_MODEL_PATH = '/home/alessandro/exo_v2_ws/src/exo_control/yolo_weights/best-realsense-tobii.pt'
+YOLO_MODEL_PATH = '/home/alessandro/exo_v2_ws/src/Exoskeleton/exo_control/yolo_weights/best-realsense-tobii.pt'
+SHOW_YOLO_OVERLAY = False
 
 GAZE_CIRCLE_RADIUS = 10
 VIDEOPLAYER_PROGRESS_BAR_HEIGHT = dp(44)
@@ -385,6 +386,8 @@ class G3App(App, ScreenManager):
         self._off_dwell = deque(maxlen=BOX_GATE_OFF_WIN)
         self._gate_heartbeat_task = None
 
+        
+
     # ---------- GAZE in bbox ----------
     # def _gaze_in_any_box(self, det_list, frame_w: int, frame_h: int) -> bool:
     #     """
@@ -698,6 +701,25 @@ class G3App(App, ScreenManager):
                 r0 = results[0]
                 boxes = r0.boxes
 
+                # soglie per classe
+                MIN_CONF = {
+                    "Box-Grasped": 0.92,
+                    "Box-Not Grasped": 0.30,
+                }
+
+                # det_list = []
+                # if boxes is None or len(boxes) == 0:
+                #     print("[YOLO] No detections")
+                # else:
+                #     out = []
+                #     for b in boxes:
+                #         cls_id = int(b.cls[0])
+                #         p = float(b.conf[0])
+                #         label = self.yolo_model.names.get(cls_id, str(cls_id))
+                #         out.append(f"{label}({p:.2f})")
+                #         xyxy = b.xyxy[0].detach().cpu().numpy().astype(int).tolist()
+                #         det_list.append({"xyxy": xyxy, "label": label, "conf": p})
+                #     print("[YOLO] Detected:", ", ".join(out))
                 det_list = []
                 if boxes is None or len(boxes) == 0:
                     print("[YOLO] No detections")
@@ -707,6 +729,11 @@ class G3App(App, ScreenManager):
                         cls_id = int(b.cls[0])
                         p = float(b.conf[0])
                         label = self.yolo_model.names.get(cls_id, str(cls_id))
+                        # filtro per-classe
+                        min_req = MIN_CONF.get(label, 0.30)  # default prudente
+                        if p < min_req:
+                            continue
+
                         out.append(f"{label}({p:.2f})")
                         xyxy = b.xyxy[0].detach().cpu().numpy().astype(int).tolist()
                         det_list.append({"xyxy": xyxy, "label": label, "conf": p})
@@ -787,6 +814,12 @@ class G3App(App, ScreenManager):
             dt = time.monotonic() - start
             await asyncio.sleep(max(0.0, period - dt))
 
+    def _compute_video_rect(self, display):
+        video_h = display.width * VIDEO_Y_TO_X_RATIO
+        video_y = (display.height - video_h) / 2.0
+        # coordinate locali del widget `display`
+        return (0.0, video_y, display.width, video_h) 
+
     # ---------- Live stream ----------
     def start_live_stream(self, g3: Glasses3) -> None:
         self._init_ros()
@@ -800,7 +833,7 @@ class G3App(App, ScreenManager):
                         print("[YOLO] Using CUDA" if torch.cuda.is_available() else "[YOLO] Using CPU")
 
                     if self._yolo_task is None or self._yolo_task.done():
-                        self._yolo_task = self.create_task(self._yolo_loop(conf=0.7, rate_hz=3.0), name="yolo_loop")
+                        self._yolo_task = self.create_task(self._yolo_loop(conf=0.3, rate_hz=3.0), name="yolo_loop") # conf=0.7
 
                     live_screen = self.get_screen("control").ids.sm.get_screen("live")
                     Window.bind(on_resize=live_screen.clear)
@@ -821,6 +854,17 @@ class G3App(App, ScreenManager):
                             (0, video_origin_y),
                             (display.size[0], video_height),
                         )
+
+                        # <<< aggiungi questo >>>
+                        def _update_gaze_layout(*_):
+                            video_h = display.width * VIDEO_Y_TO_X_RATIO
+                            video_y = (display.height - video_h) / 2.0
+                            if self.live_gaze_circle:
+                                self.live_gaze_circle.origin = (0, video_y)
+                                self.live_gaze_circle.size   = (display.width, video_h)
+
+                        _update_gaze_layout()  # prima init
+                        display.bind(size=_update_gaze_layout, pos=_update_gaze_layout)
 
                     self.draw_frame_event = Clock.schedule_interval(draw_frame, 1 / LIVE_FRAME_RATE)
                     await self.read_frames_task
@@ -856,22 +900,70 @@ class G3App(App, ScreenManager):
                 image = np.ascontiguousarray(image)
 
             h, w = image.shape[:2]
-            for d in getattr(self, "_yolo_latest", []):
-                x1, y1, x2, y2 = d["xyxy"]
-                x1 = max(0, min(w - 1, int(x1)))
-                y1 = max(0, min(h - 1, int(y1)))
-                x2 = max(0, min(w - 1, int(x2)))
-                y2 = max(0, min(h - 1, int(y2)))
-                cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(
-                    image,
-                    f'{d["label"]} {d["conf"]:.2f}',
-                    (x1, max(0, y1 - 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (0, 255, 0),
-                    2,
-                )
+            flip_label_vert = True  # ← metti False se non vuoi più il flip
+
+
+            if SHOW_YOLO_OVERLAY:
+                for d in getattr(self, "_yolo_latest", []):
+                    try:
+                        # --- clamp bbox ---
+                        x1, y1, x2, y2 = map(int, d["xyxy"])
+                        x1 = max(0, min(w - 1, x1))
+                        x2 = max(0, min(w - 1, x2))
+                        y1 = max(0, min(h - 1, y1))
+                        y2 = max(0, min(h - 1, y2))
+                        if x2 <= x1 or y2 <= y1:
+                            continue
+
+                        # disegna bbox
+                        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+                        # --- label SOLO sopra (senza confidence) ---
+                        label_text = str(d.get("label", "")).strip()
+                        if not label_text:
+                            continue
+
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 0.6
+                        thickness = 2
+                        (tw, th), baseline = cv2.getTextSize(label_text, font, font_scale, thickness)
+                        pad = 4
+
+                        patch_w = tw + 2 * pad
+                        patch_h = th + baseline + 2 * pad
+
+                        # posizione preferita: SOPRA al box (fallback: dentro)
+                        top_y = y1 - 4 - patch_h
+                        left_x = x1
+                        if top_y < 0:                # se non c'è spazio sopra, mettila dentro
+                            top_y = y1 + 2
+
+                        # crea patch label (sfondo nero + testo bianco)
+                        patch = np.zeros((patch_h, patch_w, 3), dtype=np.uint8)
+                        cv2.putText(
+                            patch, label_text,
+                            (pad, patch_h - baseline - pad),
+                            font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA
+                        )
+
+                        # <<< FLIP SOLO DELLA LABEL IN VERTICALE >>>
+                        if flip_label_vert:
+                            patch = cv2.flip(patch, 0)  # 0 = flip verticale
+
+                        # incolla la patch dentro i limiti immagine
+                        x0 = max(0, left_x)
+                        y0 = max(0, top_y)
+                        x_end = min(w, left_x + patch_w)
+                        y_end = min(h, top_y + patch_h)
+                        if x_end > x0 and y_end > y0:
+                            px0 = max(0, -left_x)
+                            py0 = max(0, -top_y)
+                            px_end = px0 + (x_end - x0)
+                            py_end = py0 + (y_end - y0)
+                            image[y0:y_end, x0:x_end] = patch[py0:py_end, px0:px_end]
+
+                    except Exception as e:
+                        print(f"[DRAW] label error: {e}")
 
             texture = Texture.create(size=(image.shape[1], image.shape[0]), colorfmt="bgr")
             image = np.reshape(image, -1)
@@ -879,11 +971,21 @@ class G3App(App, ScreenManager):
             display.canvas.add(Color(1, 1, 1, 1))
             if self.last_texture is not None:
                 display.canvas.remove(self.last_texture)
+
+            # self.last_texture = Rectangle(
+            #     texture=texture,
+            #     pos=(0, (display.top - display.width * VIDEO_Y_TO_X_RATIO) / 2),
+            #     size=(display.width, display.width * VIDEO_Y_TO_X_RATIO),
+            # )
+            video_h = display.width * VIDEO_Y_TO_X_RATIO
+            video_y = (display.height - video_h) / 2.0  # <<< coordinate locali, non display.top
             self.last_texture = Rectangle(
                 texture=texture,
-                pos=(0, (display.top - display.width * VIDEO_Y_TO_X_RATIO) / 2),
-                size=(display.width, display.width * VIDEO_Y_TO_X_RATIO),
+                pos=(0, video_y),
+                size=(display.width, video_h),
             )
+
+
             display.canvas.add(self.last_texture)
 
             gaze_data = self.latest_gaze_with_timestamp[0]
