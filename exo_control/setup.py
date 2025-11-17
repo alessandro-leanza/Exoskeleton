@@ -14,7 +14,7 @@ setup(
     license='Apache License 2.0',
     entry_points={
         'console_scripts': [
-            'two_boards_exo_control = exo_control.two_boards_exo_control:main',
+            'twoboards_odrive = exo_control.twoboards_odrive:main',
             'admittance_controller = exo_control.admittance_controller:main',
             'stoop_trajs = exo_control.stoop_trajs:main',
             'yolo_grasp_detector = exo_control.yolo_grasp_detector:main',
@@ -29,7 +29,7 @@ setup(
             'realsense_yolo = exo_control.realsense_yolo:main',
             'admittance_controller_perception = exo_control.admittance_controller_perception:main',
             'admittance_controller_perception_offset = exo_control.admittance_controller_perception_offset:main',
-            'admittance_controller_perception_offset_funz_rampecorrette = exo_control.admittance_controller_perception_offset_funz_rampecorrette:main',
+            'admittancecontrol_box = exo_control.admittancecontrol_box:main',
         ],
     },
 )
