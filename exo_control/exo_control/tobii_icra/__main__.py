@@ -39,7 +39,7 @@ import time
 # ROS2
 import rclpy
 from rclpy.node import Node
-from exo_interfaces.srv import SetAdmittanceParams
+from exo_interfaces.srv import RunTrajectory, SetAdmittanceParams
 from std_msgs.msg import Bool
 from sensor_msgs.msg import JointState
 
@@ -50,6 +50,7 @@ GAZE_DWELL_WINDOW = 15
 GAZE_DWELL_RATIO  = 0.6
 
 # Service names & admittance
+RUN_TRAJ_SRV_NAME = 'run_trajectory'
 SET_ADMITT_SRV_NAME = 'set_admittance_params'
 ACTION_COOLDOWN_S = 1.0
 K_DOWN = 30.0
@@ -365,6 +366,7 @@ class G3App(App, ScreenManager):
 
         # ROS
         self.ros_node: Node | None = None
+        self.traj_client = None
         self.adm_client = None
         self.box_gate_pub = None
         self.js_sub = None
@@ -452,6 +454,7 @@ class G3App(App, ScreenManager):
         if not rclpy.ok():
             rclpy.init()
         self.ros_node = rclpy.create_node('vision_command_node')
+        self.traj_client = self.ros_node.create_client(RunTrajectory, RUN_TRAJ_SRV_NAME)
         self.adm_client  = self.ros_node.create_client(SetAdmittanceParams, SET_ADMITT_SRV_NAME)
         self.box_gate_pub = self.ros_node.create_publisher(Bool, 'perception/box_gate', 10)
         self.js_sub       = self.ros_node.create_subscription(JointState, 'joint_states', self._on_js, 30)
@@ -460,6 +463,8 @@ class G3App(App, ScreenManager):
         self.box_gate_pub.publish(Bool(data=False))
         self.box_gate = False
 
+        if not self.traj_client.wait_for_service(timeout_sec=5.0):
+            print(f"[ROS] ERROR: service '{RUN_TRAJ_SRV_NAME}' not available")
         if not self.adm_client.wait_for_service(timeout_sec=5.0):
             print(f"[ROS] ERROR: service '{SET_ADMITT_SRV_NAME}' not available")
 
@@ -481,6 +486,7 @@ class G3App(App, ScreenManager):
             print(f"[ROS] shutdown error: {e}")
         finally:
             self._ros_ready = False
+            self.traj_client = None
             self.adm_client = None
             self.box_gate_pub = None
             self.js_sub = None
@@ -493,14 +499,14 @@ class G3App(App, ScreenManager):
             pass
         self._gate_heartbeat_task = None
 
-    # def _send_trajectory_request_blocking(self, direction: str):
-    #     if not self._ros_ready or self.ros_node is None or self.traj_client is None:
-    #         print("[ROS] traj client not ready")
-    #         return
-    #     req = RunTrajectory.Request()
-    #     req.trajectory_type = direction
-    #     future = self.traj_client.call_async(req)
-    #     rclpy.spin_until_future_complete(self.ros_node, future)
+    def _send_trajectory_request_blocking(self, direction: str):
+        if not self._ros_ready or self.ros_node is None or self.traj_client is None:
+            print("[ROS] traj client not ready")
+            return
+        req = RunTrajectory.Request()
+        req.trajectory_type = direction
+        future = self.traj_client.call_async(req)
+        rclpy.spin_until_future_complete(self.ros_node, future)
 
     def _set_admittance_params_blocking(self, k_val: float):
         if not self._ros_ready or self.ros_node is None or self.adm_client is None:
@@ -517,7 +523,7 @@ class G3App(App, ScreenManager):
             return
         k_val = K_DOWN if action == 'down' else K_UP
         await asyncio.to_thread(self._set_admittance_params_blocking, k_val)
-        # await asyncio.to_thread(self._send_trajectory_request_blocking, action)
+        await asyncio.to_thread(self._send_trajectory_request_blocking, action)
 
     def _publish_box_gate(self, val: bool):
         if not self._ros_ready:
