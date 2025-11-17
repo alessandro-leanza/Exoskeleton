@@ -126,7 +126,7 @@ class AdmittanceController(Node):
         self.declare_parameter('l_int', 0.55)        # [m]
         self.declare_parameter('l_b', 0.20)          # [m]
         self.declare_parameter('assist_max_nm', 200.0)
-        self.declare_parameter('coeff_assist', 0.25)
+        self.declare_parameter('coeff_assist', 0.25) # it was 0.25
         self.declare_parameter('theta_r_deadzone', 0.01)
         self.declare_parameter('perception_on', True)    # abilita τ_b
         self.declare_parameter('offset', 0.0)            # offset angolare per modello gravità
@@ -165,7 +165,7 @@ class AdmittanceController(Node):
         self.declare_parameter('step_min_speed', 0.2)  # [rad/s] (solo per lead reference)
 
         # ---------- Scala τ_b per 2->3 (se vuoi) ----------
-        self.declare_parameter('box_scale_23', 1.0)
+        self.declare_parameter('box_scale_23', 0.1) # it was 1.0
 
         # leggi parametri
         self.g = float(self.get_parameter('g').value)

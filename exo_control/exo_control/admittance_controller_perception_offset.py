@@ -18,7 +18,7 @@ class AdmittanceController(Node):
       3->0: tau_ass = tau_w
 
     Spegnimento assist: appena raggiunto il target della transizione
-    (entro ±assist_margin) E dopo che lo stato è effettivamente cambiato.
+    (entro +-assist_margin) E dopo che lo stato è effettivamente cambiato.
     """
 
     # ==== mapping stati ====
@@ -126,9 +126,9 @@ class AdmittanceController(Node):
         self.declare_parameter('l_int', 0.55)        # [m]
         self.declare_parameter('l_b', 0.20)          # [m]
         self.declare_parameter('assist_max_nm', 200.0)
-        self.declare_parameter('coeff_assist', 0.0)
+        self.declare_parameter('coeff_assist', 0.2) # it was 0.5
         self.declare_parameter('theta_r_deadzone', 0.01)
-        self.declare_parameter('perception_on', True)    # abilita τ_b
+        self.declare_parameter('perception_on', False)    # abilita τ_b
         self.declare_parameter('offset', 0.0)            # offset angolare per modello gravità
 
         self.declare_parameter('tau_slew_rate', 80.0)  # [Nm/s] velocità massima variazione tau_ass
@@ -151,9 +151,9 @@ class AdmittanceController(Node):
 
         # ---------- Soglie posture + dead-zones ----------
         self.declare_parameter('theta_stand', 0.05)      # [rad]
-        self.declare_parameter('theta_bend', 0.7)  # [rad]
+        self.declare_parameter('theta_bend', 0.55)  # [rad]
         self.declare_parameter('assist_margin', 0.01)   # [rad]
-        self.declare_parameter('assist_delay_s', 0.5)
+        self.declare_parameter('assist_delay_s', 1.0)
         self.assist_delay_s = float(self.get_parameter('assist_delay_s').value)
         self._rise_from_bend_t0 = None
 
@@ -165,7 +165,7 @@ class AdmittanceController(Node):
         self.declare_parameter('step_min_speed', 0.2)  # [rad/s] (solo per lead reference)
 
         # ---------- Scala τ_b per 2->3 (se vuoi) ----------
-        self.declare_parameter('box_scale_23', 1.0)
+        self.declare_parameter('box_scale_23', 0.2) # it was 1.0
 
         # leggi parametri
         self.g = float(self.get_parameter('g').value)

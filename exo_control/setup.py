@@ -29,6 +29,7 @@ setup(
             'realsense_yolo = exo_control.realsense_yolo:main',
             'admittance_controller_perception = exo_control.admittance_controller_perception:main',
             'admittance_controller_perception_offset = exo_control.admittance_controller_perception_offset:main',
+            'admittance_controller_perception_offset_funz_rampecorrette = exo_control.admittance_controller_perception_offset_funz_rampecorrette:main',
         ],
     },
 )
