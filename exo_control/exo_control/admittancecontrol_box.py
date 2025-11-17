@@ -151,7 +151,7 @@ class AdmittanceController(Node):
 
         # ---------- Soglie posture + dead-zones ----------
         self.declare_parameter('theta_stand', 0.0)      # [rad]
-        self.declare_parameter('theta_bend', 1.0)  # [rad]
+        self.declare_parameter('theta_bend', 0.5)  # [rad]
         self.declare_parameter('assist_margin', 0.01)   # [rad]
         self.declare_parameter('assist_delay_s', 1.0)
         self.assist_delay_s = float(self.get_parameter('assist_delay_s').value)
