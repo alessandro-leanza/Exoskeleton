@@ -1,9 +1,9 @@
-# Exoskeleton Setup
+# Exoskeleton 
 
 This repository contains the ROS 2 / ODrive / Tobii-based control stack for a back-support exoskeleton.
 
 The typical workflow is:
-1. Set up the ROS + Conda environment.
+1. Set up the ROS 2 + Conda environment.
 2. Calibrate the ODrive axes.
 3. Run:
    - the ODrive controller node,
@@ -41,20 +41,27 @@ For convenience, you can define two aliases (e.g. in your `~/.bashrc`):
 3) Run ODrive calibration:
    ```bash
    odrivetool
+   ```
+   And then:
+   ```bash
    odrv0.axis0.requested_state = AXIS_STATE_FULL_CALIBRATION_SEQUENCE
    odrv1.axis0.requested_state = AXIS_STATE_FULL_CALIBRATION_SEQUENCE
    ```
-   You should hear a beep from both motors. If not, recheck and tighten the cabling.
+   You should hear a beep from both motors. After that, they must move forward and then backward (or vice versa, depending on the direction in which they are mounted). If not, recheck and tighten the cabling.
 
 ## Run stack
 1) Start ODrive bridge:
    ```bash
    ros2 run exo_control twoboards_odrive
    ```
+   Connects to both ODrive axes, lets ROS switch between position/torque passthrough, publishes joint states, monitors faults, and idles the drives on shutdown.
+
 2) Start admittance control:
    ```bash
    ros2 run exo_control admittancecontrol_box
    ```
+   Runs a ROS 2 admittance controller with a pick/place finite-state machine: it reads joint states and intent cues (theta_ref, box gate), blends gravity and box/load compensation into smooth assistive torques with slew limits, ramps stiffness/damping between soft/hard profiles, publishes position commands and telemetry (estimated/assist torques, admittance params, FSM state), and exposes a service to retune admittance gains at runtime.
+   
 3) Launch Tobii glasses app:
    ```bash
    cd exo_control/exo_control
@@ -63,4 +70,4 @@ For convenience, you can define two aliases (e.g. in your `~/.bashrc`):
 
 ## Tobii glasses app
 - Connect the glasses over Wi‑Fi, launch `tobii.py`, select the glasses on the first screen, then choose Live → Start.
-- YOLO labels and bounding boxes are currently commented out. If you need them, reach out and we can re-enable the relevant code.
+- YOLO labels and bounding boxes are currently commented out. 

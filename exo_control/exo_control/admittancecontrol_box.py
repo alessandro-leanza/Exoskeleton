@@ -138,7 +138,7 @@ class AdmittanceController(Node):
         self.declare_parameter('tau_slew_rate_up',   60.0)   # [Nm/s] salita max
         self.declare_parameter('tau_slew_rate_down', 90.0)   # [Nm/s] discesa max
         self.declare_parameter('tau_rise_ease_s',    0.25)   # [s] durata ease-in in salita
-        self.declare_parameter('tau_rise_min_fac',   0.25)   # fattore iniziale (0..1) del rate in salita
+        self.declare_parameter('tau_rise_min_fac',   0.25)   # fattore iniziale (0.1) del rate in salita
 
         self.tau_slew_rate_up   = float(self.get_parameter('tau_slew_rate_up').value)
         self.tau_slew_rate_down = float(self.get_parameter('tau_slew_rate_down').value)
@@ -153,7 +153,7 @@ class AdmittanceController(Node):
         self.declare_parameter('theta_stand', 0.0)      # [rad]
         self.declare_parameter('theta_bend', 0.5)  # [rad]
         self.declare_parameter('assist_margin', 0.01)   # [rad]
-        self.declare_parameter('assist_delay_s', 1.0)
+        self.declare_parameter('assist_delay_s', 10.0)  # [s] After this time in bend without going below theta_bend, assist will turn on
         self.assist_delay_s = float(self.get_parameter('assist_delay_s').value)
         self._rise_from_bend_t0 = None
 
@@ -201,7 +201,7 @@ class AdmittanceController(Node):
         self.curr_box_scale    = 1.0
 
         # stato box_gate locale
-        self.box_gate = False
+        self.box_gate = True # If we dont want to use the glasses, but we want the "box contribution", set to True from the beginning
         self._publish_fsm_and_assist()
 
         # ---------- Timers ----------
