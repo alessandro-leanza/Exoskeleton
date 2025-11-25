@@ -62,7 +62,7 @@ TRIGGER_PERCENTAGE_NOT_GRASPED = 0.7
 TRIGGER_PERCENTAGE_GRASPED = 0.4
 
 YOLO_MODEL_PATH = '/home/alessandro/exo_v2_ws/src/Exoskeleton/exo_control/yolo_weights/best-realsense-tobii.pt'
-SHOW_YOLO_OVERLAY = False
+SHOW_YOLO_OVERLAY = True
 
 GAZE_CIRCLE_RADIUS = 10
 VIDEOPLAYER_PROGRESS_BAR_HEIGHT = dp(44)
@@ -697,8 +697,8 @@ class G3App(App, ScreenManager):
 
                 # soglie per classe
                 MIN_CONF = {
-                    "Box-Grasped": 0.92,
-                    "Box-Not Grasped": 0.30,
+                    "Box-Grasped": 0.90,
+                    "Box-Not Grasped": 0.50,
                 }
 
                 # det_list = []
@@ -714,6 +714,31 @@ class G3App(App, ScreenManager):
                 #         xyxy = b.xyxy[0].detach().cpu().numpy().astype(int).tolist()
                 #         det_list.append({"xyxy": xyxy, "label": label, "conf": p})
                 #     print("[YOLO] Detected:", ", ".join(out))
+
+                # QUESTO BLOCCO FUNZIONA
+                # det_list = []
+                # if boxes is None or len(boxes) == 0:
+                #     print("[YOLO] No detections")
+                # else:
+                #     out = []
+                #     for b in boxes:
+                #         cls_id = int(b.cls[0])
+                #         p = float(b.conf[0])
+                #         label = self.yolo_model.names.get(cls_id, str(cls_id))
+                #         # filtro per-classe
+                #         min_req = MIN_CONF.get(label, 0.30)  # default prudente
+                #         if p < min_req:
+                #             continue
+
+                #         out.append(f"{label}({p:.2f})")
+                #         xyxy = b.xyxy[0].detach().cpu().numpy().astype(int).tolist()
+                #         det_list.append({"xyxy": xyxy, "label": label, "conf": p})
+                #     print("[YOLO] Detected:", ", ".join(out))
+
+                # soglie
+                GRASPED_ACCEPT   = 0.90   # sopra → considerato davvero "Grasped"
+                NOT_MIN_CONF     = 0.30   # sotto → scarto del tutto
+
                 det_list = []
                 if boxes is None or len(boxes) == 0:
                     print("[YOLO] No detections")
@@ -722,16 +747,36 @@ class G3App(App, ScreenManager):
                     for b in boxes:
                         cls_id = int(b.cls[0])
                         p = float(b.conf[0])
-                        label = self.yolo_model.names.get(cls_id, str(cls_id))
-                        # filtro per-classe
-                        min_req = MIN_CONF.get(label, 0.30)  # default prudente
-                        if p < min_req:
-                            continue
+                        raw_label = self.yolo_model.names.get(cls_id, str(cls_id))
 
-                        out.append(f"{label}({p:.2f})")
+                        # --- RIMAPPATURA GRASPED → NOT GRASPED sotto soglia ---
+                        label = raw_label
+                        if raw_label == "Box-Grasped":
+                            if p >= GRASPED_ACCEPT:
+                                # ok, resta Grasped
+                                label = "Box-Grasped"
+                            elif p >= NOT_MIN_CONF:
+                                # Grasped ma sotto soglia → trattalo come Not Grasped
+                                label = "Box-Not Grasped"
+                            else:
+                                # troppo poco affidabile → scarto
+                                continue
+                        elif raw_label == "Box-Not Grasped":
+                            if p >= NOT_MIN_CONF:
+                                label = "Box-Not Grasped"
+                            else:
+                                continue
+                        else:
+                            # altre classi eventuali → soglia default
+                            if p < NOT_MIN_CONF:
+                                continue
+
+                        out.append(f"{label}({p:.2f}) (raw={raw_label}, conf={p:.2f})")
                         xyxy = b.xyxy[0].detach().cpu().numpy().astype(int).tolist()
                         det_list.append({"xyxy": xyxy, "label": label, "conf": p})
+
                     print("[YOLO] Detected:", ", ".join(out))
+
 
                 self._yolo_latest = det_list
 
