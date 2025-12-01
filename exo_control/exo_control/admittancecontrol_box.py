@@ -150,10 +150,10 @@ class AdmittanceController(Node):
 
 
         # ---------- Soglie posture + dead-zones ----------
-        self.declare_parameter('theta_stand', 0.0)      # [rad]
-        self.declare_parameter('theta_bend', 0.5)  # [rad]
+        self.declare_parameter('theta_stand', 0.2)      # [rad]
+        self.declare_parameter('theta_bend', 0.6)  # [rad]
         self.declare_parameter('assist_margin', 0.01)   # [rad]
-        self.declare_parameter('assist_delay_s', 10.0)  # [s] After this time in bend without going below theta_bend, assist will turn on
+        self.declare_parameter('assist_delay_s', 1.0)  # [s] After this time in bend without going below theta_bend, assist will turn on
         self.assist_delay_s = float(self.get_parameter('assist_delay_s').value)
         self._rise_from_bend_t0 = None
 
@@ -165,7 +165,7 @@ class AdmittanceController(Node):
         self.declare_parameter('step_min_speed', 0.2)  # [rad/s] (solo per lead reference)
 
         # ---------- Scala τ_b per 2->3 (se vuoi) ----------
-        self.declare_parameter('box_scale_23', 0.1) # it was 1.0
+        self.declare_parameter('box_scale_23', 0.5) # it was 1.0
 
         # leggi parametri
         self.g = float(self.get_parameter('g').value)
