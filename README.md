@@ -1,14 +1,14 @@
 # Exoskeleton 
 
-This repository contains the ROS 2 / ODrive / Tobii-based control stack for a back-support exoskeleton.
+This repository contains the ROS 2 / Moteus / Tobii-based control stack for a back-support exoskeleton.
 
 The typical workflow is:
 1. Set up the ROS 2 + Conda environment.
-2. Calibrate the ODrive axes.
-3. Run:
-   - the ODrive controller node,
+2. Run:
+   - the Moteus motors controller node,
    - the admittance controller node,
    - the Tobii glasses application.
+3. Calibrate the ODrive axes. (OLD MOTORS)
 
 Below is a step-by-step guide.
 
