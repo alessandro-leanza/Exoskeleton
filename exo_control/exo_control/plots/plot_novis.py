@@ -2,7 +2,7 @@
 # === CONFIGURAZIONE ===
 BAG_DIR   = "rosbags/rosbag2_2025_09_19-14_06_06"   # cartella che contiene signals.csv rosbag2_2025_09_19-14_06_06
 START_S   = 86 #12      # inizio finestra [s] relativo all'inizio del file (None = inizio)
-END_S     = 102  #30    # fine finestra [s]   relativo all'inizio del file (None = fine)
+END_S     = 104  #30    # fine finestra [s]   relativo all'inizio del file (None = fine)
 
 THETA_MAX_TARGET = 1.1   # [rad] nuovo massimo desiderato nella finestra
 ALLOW_EXPANSION  = True   # True: consenti anche aumenti; False: solo compressione
@@ -53,6 +53,13 @@ assist_max_nm  = 200.0  # LIMITE MECCANICO: SOLO visualizzazione "applied" (simu
 # Rampa tau_ass (come nel nodo)
 RAMP_S   = 0.3   # [s] durata rampa (tau_time_set)
 RAMP_EPS = 0.1   # [Nm] soglia per rischedulare la rampa (tau_resched_eps)
+
+# === PAREMTRI ADMITTANCE CONTROLLER ===
+K_SOFT   = 0.0
+K_HARD   = 40.0      # come step_K
+K_RAMP_S = 0.4       # time_set
+K_HOLD_S = 0.6       # HARD_HOLD_S
+
 
 # === SCRIPT ===
 import os
@@ -336,6 +343,51 @@ def apply_event_ramps(recipe: np.ndarray,
 
     return y
 
+def build_K_profile(t_rel, rise_times, fall_times,
+                    K_soft=0.0, K_hard=40.0,
+                    ramp_s=0.4, hold_s=0.6):
+    """
+    Synthetic K(t) that mimics the admittance controller:
+    - smoothstep ramp up at rise_times
+    - hard hold
+    - smoothstep ramp down at fall_times
+    """
+    K = np.full_like(t_rel, K_soft, dtype=float)
+
+    def smoothstep(u):
+        return u*u*(3.0 - 2.0*u)
+
+    # RISE → HARD
+    for t_on in rise_times:
+        if t_on is None:
+            continue
+
+        # ramp up
+        t0 = t_on
+        t1 = t_on + ramp_s
+        mask = (t_rel >= t0) & (t_rel < t1)
+        u = (t_rel[mask] - t0) / ramp_s
+        K[mask] = K_soft + (K_hard - K_soft) * smoothstep(u)
+
+        # hold
+        t2 = t1 + hold_s
+        K[(t_rel >= t1) & (t_rel < t2)] = K_hard
+
+    # FALL → SOFT
+    for t_off in fall_times:
+        if t_off is None:
+            continue
+
+        t0 = t_off
+        t1 = t_off + ramp_s
+        mask = (t_rel >= t0) & (t_rel < t1)
+        u = (t_rel[mask] - t0) / ramp_s
+        K[mask] = K_hard + (K_soft - K_hard) * smoothstep(u)
+
+        K[t_rel >= t1] = K_soft
+
+    return K
+
 # ---- Helper per incroci con soglie
 def _find_level_crossings(t: np.ndarray, y: np.ndarray, level: float, atol: float = 1e-6) -> List[float]:
     times: List[float] = []
@@ -507,6 +559,29 @@ def main():
     # --- Gate temporale per la ricetta no_vision: attiva solo in [T1w,T2], [T3,T4], [T5w,T6]
     gate_novis = np.zeros_like(t_rel, dtype=float)
 
+    # --- Synthetic K(t) profiles (vision vs no-vision) ---
+
+    K_vis = build_K_profile(
+        t_rel,
+        rise_times=[T1, T5],      # vision anticipates
+        fall_times=[T2, T6],
+        K_soft=K_SOFT,
+        K_hard=K_HARD,
+        ramp_s=K_RAMP_S,
+        hold_s=K_HOLD_S
+    )
+
+    K_novis = build_K_profile(
+        t_rel,
+        rise_times=[T1w, T5w],    # delayed activation
+        fall_times=[T2, T6],
+        K_soft=K_SOFT,
+        K_hard=K_HARD,
+        ramp_s=K_RAMP_S,
+        hold_s=K_HOLD_S
+    )
+
+
     def seg_mask(a, b):
         if a is None or b is None:
             return np.zeros_like(t_rel, dtype=bool)
@@ -573,6 +648,7 @@ def main():
 
 
     n_rows = 3
+    n_rows = 4
     # plt.figure(figsize=(12, 9))
     fig = plt.figure(figsize=(12, 9), constrained_layout=True)
 
@@ -610,9 +686,9 @@ def main():
                         label=rf"$\theta_{{\mathrm{{stand}}}}={THETA_STAND_DEG:.0f}^\circ$")
 
     # # Marker verticali
-    # for x in [T01, T10, T1, T1w, T2, T3, T4, T5, T5w, T6]:
-    #     if x is not None:
-    #         ax1.axvline(x, linestyle="--", alpha=0.5)
+    for x in [T01, T10, T1, T1w, T2, T3, T4, T5, T5w, T6]:
+        if x is not None:
+            ax1.axvline(x, linestyle="--", alpha=0.5)
 
     ax1.set_xlabel("t [s]", loc="right")
     ax1.set_ylabel(r"$\theta$ [deg]" if SHOW_POS_IN_DEG else "theta_w [rad]")
@@ -631,9 +707,9 @@ def main():
         ax2.plot(t_rel, tau_w_model, color=TAU_W_COLOR, label=r"$\tau_w$")
     if tau_b_model is not None:
         ax2.plot(t_rel, tau_b_model, color=TAU_BOX_COLOR, label=r"$\tau_{\mathrm{box}}$")
-    # for x in [T01, T10, T1, T1w, T2, T3, T4, T5, T5w, T6]:
-    #     if x is not None:
-    #         ax2.axvline(x, linestyle="--", alpha=0.3)
+    for x in [T01, T10, T1, T1w, T2, T3, T4, T5, T5w, T6]:
+        if x is not None:
+            ax2.axvline(x, linestyle="--", alpha=0.3)
     ax2.set_xlabel("t [s]", loc="right")
     ax2.set_ylabel("Torque [Nm]")
     ax2.set_title("Weight and Box torques")
@@ -650,12 +726,12 @@ def main():
     if tau_ass_nobox_appl is not None:
         ax3.plot(t_rel, tau_ass_nobox_appl,
                  label=r"$\tau_{\mathrm{ass,\,novis}}$")
-    # if tau_ass_withbox_appl is not None:
-    #     ax3.plot(t_rel, tau_ass_withbox_appl,
-    #              label=r"$\tau_{\mathrm{ass,\,vis}}$")
-    # for x in [T01, T10, T1, T1w, T2, T3, T4, T5, T5w, T6]:
-    #     if x is not None:
-    #         ax3.axvline(x, linestyle="--", alpha=0.3)
+    if tau_ass_withbox_appl is not None:
+        ax3.plot(t_rel, tau_ass_withbox_appl,
+                 label=r"$\tau_{\mathrm{ass,\,vis}}$")
+    for x in [T01, T10, T1, T1w, T2, T3, T4, T5, T5w, T6]:
+        if x is not None:
+            ax3.axvline(x, linestyle="--", alpha=0.3)
     ax3.set_xlabel("t [s]", loc="right")
     ax3.set_ylabel("Torque [Nm]")
     ax3.set_title("Total assistance torque")
@@ -665,6 +741,27 @@ def main():
     ax3.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     ax3.yaxis.set_major_locator(MultipleLocator(5))
     ax3.yaxis.set_major_formatter(FormatStrFormatter('%.0f'))
+
+    # (4) Effective admittance stiffness
+    ax4 = plt.subplot(n_rows, 1, 4, sharex=ax1)
+
+    ax4.plot(t_rel, K_vis,
+            color="tab:orange",
+            linewidth=2.0,
+            label=r"$K(t)$ vision")
+
+    ax4.plot(t_rel, K_novis,
+            color="tab:gray",
+            linestyle="--",
+            linewidth=2.0,
+            label=r"$K(t)$ no-vision")
+
+    ax4.set_ylabel("Stiffness $K$")
+    ax4.set_xlabel("t [s]")
+    ax4.set_title("Effective admittance stiffness scheduling")
+    ax4.grid(True)
+    ax4.legend(loc="best")
+
 
     # ---- ANIMAZIONE in tempo reale sulla finestra (durata = END_S - START_S) ----
 

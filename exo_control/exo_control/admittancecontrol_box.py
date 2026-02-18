@@ -6,6 +6,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float64, Bool
 from sensor_msgs.msg import JointState
 from exo_interfaces.srv import SetAdmittanceParams
+import copy
 
 class AdmittanceController(Node):
     """
@@ -161,7 +162,7 @@ class AdmittanceController(Node):
         # ---------- Step / lead reference ----------
         self.declare_parameter('step_mode', True)
         self.declare_parameter('step_delta', 0.07)      # [rad]
-        self.declare_parameter('step_K', 40.0)          # K piccola durante il lead
+        self.declare_parameter('step_K', 20.0)          # K piccola durante il lead # 40
         self.declare_parameter('step_min_speed', 0.2)  # [rad/s] (solo per lead reference)
 
         # ---------- Scala τ_b per 2->3 (se vuoi) ----------
@@ -684,8 +685,15 @@ class AdmittanceController(Node):
             self.x[i] += self.v[i] * self.dt
 
         # Vincolo L=-R
-        theta_ref_l = -self.x[1]
-        theta_ref_r =  self.x[1]
+        # theta_ref_l = -self.x[1]
+        # theta_ref_r =  self.x[1]
+
+        theta_ref_l = copy.deepcopy(self.x[1])
+        theta_ref_r = copy.deepcopy(-self.x[1])
+
+        # pos_msg = Float32MultiArray()
+        # pos_msg.data = [theta_ref_l, theta_ref_r]
+        # self.position_pub.publish(pos_msg)
 
         # Pubblicazioni
         self.position_pub.publish(Float32MultiArray(data=[theta_ref_l, theta_ref_r]))

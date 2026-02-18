@@ -17,7 +17,7 @@ from std_msgs.msg import Float64, Float32MultiArray
 # ====== Parametri di default ======
 DEFAULT_BAG_DIR = os.environ.get(
     "ROSBAG_DIR",
-    str((Path(__file__).parent / "rosbags" / "z_vis_4").resolve())
+    str((Path(__file__).parent.parent / "rosbags" / "z_ok_novision").resolve())
 )
 DEFAULT_OUT = "plot.png"
 
