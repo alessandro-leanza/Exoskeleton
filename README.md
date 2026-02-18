@@ -48,7 +48,7 @@ For convenience, you can define two aliases (e.g. in your `~/.bashrc`):
 3) Launch Tobii glasses app:
    ```bash
    cd src/Exoskeleton/exo_control/exo_control
-   python tobii
+   python tobii_vlm
    ```
 
 ## Tobii glasses app
