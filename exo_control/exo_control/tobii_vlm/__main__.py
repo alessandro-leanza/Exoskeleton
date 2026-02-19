@@ -764,6 +764,11 @@ class G3App(App, ScreenManager):
                         cls_id = int(b.cls[0])
                         p = float(b.conf[0])
                         raw_label = self.yolo_model.names.get(cls_id, str(cls_id))
+                        # Map new YOLO class names to legacy labels used by the logic.
+                        if raw_label == "grasped":
+                            raw_label = "Box-Grasped"
+                        elif raw_label == "not_grasped":
+                            raw_label = "Box-Not Grasped"
 
                         # --- RIMAPPATURA GRASPED → NOT GRASPED sotto soglia ---
                         label = raw_label

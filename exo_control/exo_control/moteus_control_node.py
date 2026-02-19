@@ -107,9 +107,9 @@ class MoteusDualControllerNode(Node):
 
         while self.is_running and rclpy.ok():
             # Calculate motor rotations (revs)
-            # Motor 1: Normal | Motor 2: Inverted
-            revs1 = (self.command_pos_rad / (2 * math.pi)) * self.gear_ratio
-            revs2 = -(self.command_pos_rad / (2 * math.pi)) * self.gear_ratio
+            # Motor 1: Inverted | Motor 2: Normal
+            revs1 = -(self.command_pos_rad / (2 * math.pi)) * self.gear_ratio
+            revs2 = (self.command_pos_rad / (2 * math.pi)) * self.gear_ratio
 
             # Create a combined CAN frame for efficiency
             commands = [

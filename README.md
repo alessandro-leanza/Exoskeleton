@@ -53,7 +53,14 @@ For convenience, you can define two aliases (e.g. in your `~/.bashrc`):
 
 ## Tobii glasses app
 - Connect the glasses over Wi‑Fi, launch `tobii`, select the glasses on the first screen, then choose Live → Start.
-- The weights of YOLO need to be fine-tuned. At the moment, they are working well just in our laboratory with a brown cardboard box and a black chair / gray floor as a base.
+- The weights of YOLO need to be fine-tuned. At the moment, they are working well just in our laboratory.
+
+## PlotJuggler 
+To see in realtime the topics:
+   ```bash
+   ros2 run plotjuggler plotjuggler 
+   ```
+
 
 ## Calibration (run once per setup) --> OLD MOTORS 
 1) Verify encoders:

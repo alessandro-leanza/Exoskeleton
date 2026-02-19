@@ -162,7 +162,7 @@ class AdmittanceController(Node):
         # ---------- Step / lead reference ----------
         self.declare_parameter('step_mode', True)
         self.declare_parameter('step_delta', 0.07)      # [rad]
-        self.declare_parameter('step_K', 20.0)          # K piccola durante il lead # 40
+        self.declare_parameter('step_K', 10.0)          # K piccola durante il lead # 40
         self.declare_parameter('step_min_speed', 0.2)  # [rad/s] (solo per lead reference)
 
         # ---------- Scala τ_b per 2->3 (se vuoi) ----------
@@ -589,8 +589,8 @@ class AdmittanceController(Node):
             self.filtered_e[i] = self.alpha_eff*zeroed_effort + (1 - self.alpha_eff)*self.filtered_e[i]
 
     def _theta_central(self) -> float:
-        # centrale ≈ 0.5*(right - left)
-        return 0.5 * (self.filtered_p[0] - self.filtered_p[1])
+        # centrale ≈ 0.5*(left - right)  (inverted sign)
+        return 0.5 * (self.filtered_p[1] - self.filtered_p[0])
 
     def _compute_tau_components(self, theta_w: float):
         # offset per eventuale calibrazione zero postura
@@ -685,11 +685,11 @@ class AdmittanceController(Node):
             self.x[i] += self.v[i] * self.dt
 
         # Vincolo L=-R
-        # theta_ref_l = -self.x[1]
-        # theta_ref_r =  self.x[1]
+        theta_ref_l = -self.x[1]
+        theta_ref_r =  self.x[1]
 
-        theta_ref_l = copy.deepcopy(self.x[1])
-        theta_ref_r = copy.deepcopy(-self.x[1])
+        # theta_ref_l = copy.deepcopy(self.x[1])
+        # theta_ref_r = copy.deepcopy(-self.x[1])
 
         # pos_msg = Float32MultiArray()
         # pos_msg.data = [theta_ref_l, theta_ref_r]
