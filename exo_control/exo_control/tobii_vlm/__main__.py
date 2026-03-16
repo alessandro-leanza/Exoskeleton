@@ -46,6 +46,8 @@ from exo_interfaces.srv import SetAdmittanceParams
 from std_msgs.msg import Bool
 from sensor_msgs.msg import JointState
 
+from PIL import Image
+
 # ====================== PARAMS ======================
 
 # Gaze dwell
@@ -380,6 +382,10 @@ class G3App(App, ScreenManager):
         self.js_sub = None
         self._ros_ready = False
         self.box_gate = False
+        
+        # Qwen pipeline
+        self.qwen_backend = None
+        self.pipeline = None
 
         # Place baselines
         self.jidx = None
@@ -800,6 +806,41 @@ class G3App(App, ScreenManager):
 
 
                 self._yolo_latest = det_list
+                
+                pipeline_dets = []
+                for d in det_list:
+                    label = d.get("label", "")
+                    cls = None
+                    
+                    if label == "Box-Grasped":
+                        cls = "grasped"
+                    elif label == "Box-Not Grasped":
+                        cls = "not_grasped"
+                    if cls = None:
+                        continue
+                        
+                    pipeline_dets.append(
+                        {
+                            "bbox": tuple(d["xyxy"]),
+                            "class": cls,
+                            "confidence": float(d["conf"]),
+                        }
+                    )
+                if self.pipeline is not None and len(pipeline_dets) > 0:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_pil = Image.fromarray(frame_rgb)
+                    
+                    pipeline_result = self.pipeline.run(
+                        frame_pil,
+                        pipeline_dets,
+                        mode="grasp_episode",
+                    )
+
+                    if pipeline_result["num_objects"] > 0:
+                        print("[PIPELINE]", pipeline_result)
+
+                        
+                
 
                 # --- First box detection => request weight estimate once ---
                 if not self._weight_requested:
@@ -1029,6 +1070,10 @@ class G3App(App, ScreenManager):
                         print(f"[YOLO] Loading model: {YOLO_MODEL_PATH}")
                         self.yolo_model = YOLO(YOLO_MODEL_PATH)
                         print("[YOLO] Using CUDA" if torch.cuda.is_available() else "[YOLO] Using CPU")
+                    if self.qwen_backend is None:
+                        self.qwen_backend = Qwen2_5VLBackend("Qwen/Qwen2.5-VL-7B-Instruct")
+                    if self.pipeline = None:
+                        self.pipeline = perceptionPipeline(self.qwen_backend)
 
                     if self._yolo_task is None or self._yolo_task.done():
                         self._yolo_task = self.create_task(self._yolo_loop(conf=0.3, rate_hz=3.0), name="yolo_loop") # conf=0.7
