@@ -915,6 +915,9 @@ class G3App(App, ScreenManager):
                 # se in freeze, ignoro
 
             except asyncio.CancelledError:
+                print("[YOLO] Loop cancelled, closing pipeline CSV...")
+                    if getattr(self, "pipeline", None) is not None:
+                         self.pipeline.close()
                 break
             except Exception as e:
                 print(f"[YOLO] Error during inference: {e}")
