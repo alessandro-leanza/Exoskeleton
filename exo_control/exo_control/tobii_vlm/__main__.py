@@ -9,6 +9,8 @@ from typing import List, Optional, Set, Tuple, cast
 
 import aiohttp
 import numpy as np
+from pipeline.qwen_inference import Qwen2_5VLBackend
+from pipeline.perception_pipeline import PerceptionPipeline
 from eventkinds import AppEventKind, ControlEventKind
 from kivy.app import App
 from kivy.clock import Clock
@@ -816,7 +818,7 @@ class G3App(App, ScreenManager):
                         cls = "grasped"
                     elif label == "Box-Not Grasped":
                         cls = "not_grasped"
-                    if cls = None:
+                    if cls is None:
                         continue
                         
                     pipeline_dets.append(
@@ -916,8 +918,8 @@ class G3App(App, ScreenManager):
 
             except asyncio.CancelledError:
                 print("[YOLO] Loop cancelled, closing pipeline CSV...")
-                    if getattr(self, "pipeline", None) is not None:
-                         self.pipeline.close()
+                if getattr(self, "pipeline", None) is not None:
+                    self.pipeline.close()
                 break
             except Exception as e:
                 print(f"[YOLO] Error during inference: {e}")
@@ -1075,8 +1077,8 @@ class G3App(App, ScreenManager):
                         print("[YOLO] Using CUDA" if torch.cuda.is_available() else "[YOLO] Using CPU")
                     if self.qwen_backend is None:
                         self.qwen_backend = Qwen2_5VLBackend("Qwen/Qwen2.5-VL-7B-Instruct")
-                    if self.pipeline = None:
-                        self.pipeline = perceptionPipeline(self.qwen_backend)
+                    if self.pipeline is None:
+                        self.pipeline = PerceptionPipeline(self.qwen_backend)
 
                     if self._yolo_task is None or self._yolo_task.done():
                         self._yolo_task = self.create_task(self._yolo_loop(conf=0.3, rate_hz=3.0), name="yolo_loop") # conf=0.7

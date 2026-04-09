@@ -165,10 +165,6 @@ class PerceptionPipeline:
         ])
         self.csv_file.flush()
 
-return {
-    ...
-}
-
         return {
             "mode": "bbox_trigger",
             "pipeline_latency_ms": pipeline_latency_ms,
@@ -301,11 +297,12 @@ return {
                 "triggered_this_run",
                 "skip_reason",
                 "num_objects"
+                ])
                 
                 
     def close(self):
         if hasattr(self, "csv_file"):
-            self.csv_file.close()    ])
+            self.csv_file.close()    
             
     
     def run(self, frame, detections, mode="grasp_episode"):
