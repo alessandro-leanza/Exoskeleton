@@ -50,6 +50,8 @@ class AdmittanceController(Node):
         self.M_pub            = self.create_publisher(Float64, 'admittance/M', 10)
         self.C_pub            = self.create_publisher(Float64, 'admittance/C', 10)
         self.K_pub            = self.create_publisher(Float64, 'admittance/K', 10)
+        self.theta_c_pub      = self.create_publisher(Float64, 'admittance/theta_c', 10)
+        self.theta_c_dot_pub  = self.create_publisher(Float64, 'admittance/theta_c_dot', 10)
 
         # τ_meas / τ_ass (per-giunto) + contributi centrali
         self.tau_meas_pub       = self.create_publisher(Float32MultiArray, 'admittance/tau_meas', 10)
@@ -80,7 +82,7 @@ class AdmittanceController(Node):
         # Profili hard/soft
         self.SOFT_K = 0.0
         self.HARD_K_DEFAULT = 0.0
-        self.HARD_K_MIN = 10.0
+        self.HARD_K_MIN = 0.0
         self.down_K = 0.0
         self.traj_idle_s = 1.0
 
@@ -127,7 +129,7 @@ class AdmittanceController(Node):
         self.declare_parameter('l_int', 0.55)        # [m]
         self.declare_parameter('l_b', 0.20)          # [m]
         self.declare_parameter('assist_max_nm', 200.0)
-        self.declare_parameter('coeff_assist', 0.25) # it was 0.25
+        self.declare_parameter('coeff_assist', 0.15) # it was 0.25
         self.declare_parameter('theta_r_deadzone', 0.01)
         self.declare_parameter('perception_on', True)    # abilita τ_b
         self.declare_parameter('offset', 0.0)            # offset angolare per modello gravità
@@ -151,8 +153,8 @@ class AdmittanceController(Node):
 
 
         # ---------- Soglie posture + dead-zones ----------
-        self.declare_parameter('theta_stand', 0.2)      # [rad]
-        self.declare_parameter('theta_bend', 0.6)  # [rad]
+        self.declare_parameter('theta_stand', 0.1)      # [rad] 0.2
+        self.declare_parameter('theta_bend', 0.55)  # [rad] 0.6
         self.declare_parameter('assist_margin', 0.01)   # [rad]
         self.declare_parameter('assist_delay_s', 1.0)  # [s] After this time in bend without going below theta_bend, assist will turn on
         self.assist_delay_s = float(self.get_parameter('assist_delay_s').value)
@@ -161,12 +163,12 @@ class AdmittanceController(Node):
 
         # ---------- Step / lead reference ----------
         self.declare_parameter('step_mode', True)
-        self.declare_parameter('step_delta', 0.07)      # [rad]
-        self.declare_parameter('step_K', 10.0)          # K piccola durante il lead # 40
-        self.declare_parameter('step_min_speed', 0.2)  # [rad/s] (solo per lead reference)
+        self.declare_parameter('step_delta', 0.2)      # [rad]0 # 0.07
+        self.declare_parameter('step_K', 40.0)          # K piccola durante il lead # 40
+        self.declare_parameter('step_min_speed', 0.02)  # [rad/s] (solo per lead reference) # 0.02
 
         # ---------- Scala τ_b per 2->3 (se vuoi) ----------
-        self.declare_parameter('box_scale_23', 0.5) # it was 1.0
+        self.declare_parameter('box_scale_23', 0.0) # it was 1.0
 
         # leggi parametri
         self.g = float(self.get_parameter('g').value)
@@ -625,7 +627,9 @@ class AdmittanceController(Node):
 
         # centrale e velocità (vel solo per step mode)
         theta_c     = self._theta_central()
-        theta_c_dot = 0.5 * (self.filtered_v[0] - self.filtered_v[1])
+        theta_c_dot = 0.5 * (self.filtered_v[1] - self.filtered_v[0])
+        self.theta_c_pub.publish(Float64(data=float(theta_c)))
+        self.theta_c_dot_pub.publish(Float64(data=float(theta_c_dot)))
 
         # step mode classica (identica)
         if self.step_mode and abs(theta_c_dot) > self.step_min_speed:

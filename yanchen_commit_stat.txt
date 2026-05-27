@@ -1,0 +1,11 @@
+commit 81d4f9a83539bab3484a7c36d1ead5d45ae05a2f
+Author: Yanchen <yanchen.wu@mail.polimi.it>
+Date:   Thu Apr 9 15:26:07 2026 +0200
+
+    Add offline testing pipeline with YOLO integration and CSV logging
+
+ exo_control/exo_control/README.md                  | 155 +++++++++++++++++++++
+ .../exo_control/pipeline/perception_pipeline.py    |   7 +-
+ exo_control/exo_control/test_pipeline.py           | 150 ++++++++++++++++++++
+ exo_control/exo_control/tobii_vlm/__main__.py      |  12 +-
+ 4 files changed, 314 insertions(+), 10 deletions(-)

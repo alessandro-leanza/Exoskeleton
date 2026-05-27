@@ -68,7 +68,7 @@ WARMUP = 20
 TRIGGER_PERCENTAGE_NOT_GRASPED = 0.7
 TRIGGER_PERCENTAGE_GRASPED = 0.4
 
-YOLO_MODEL_PATH = '/home/alessandro/exo_v2_ws/src/Exoskeleton/exo_control/yolo_weights/best-tobii-3objs.pt'
+YOLO_MODEL_PATH = '/home/alessandro/exo_v2_ws/src/Exoskeleton/exo_control/yolo_weights/best-tobii-3objs-v2.pt'
 SHOW_YOLO_OVERLAY = True
 
 GAZE_CIRCLE_RADIUS = 10
@@ -108,7 +108,7 @@ BOX_GATE_HEARTBEAT_HZ   = 5.0   # frequenza di ripubblicazione costante
 
 # ON dwell: attiva solo se abbastanza frame con gaze in "Box-Grasped"
 BOX_GATE_ON_WIN    = 6      # finestra
-BOX_GATE_ON_RATIO  = 0.6    # >=80% di "Grasped" accende
+BOX_GATE_ON_RATIO  = 0.6    # >=60% di "Grasped" nella finestra di lunghezza BOX_GATE_ON_WIN = 6 accende
 BOX_GATE_ON_CONSEC = 0      # se >0, usa N consecutivi invece del ratio
 
 BOX_GATE_OFF_WIN        = 8     # finestra dwell per spegnere
@@ -722,7 +722,7 @@ class G3App(App, ScreenManager):
                 # soglie per classe
                 MIN_CONF = {
                     "Box-Grasped": 0.90,
-                    "Box-Not Grasped": 0.50,
+                    "Box-Not Grasped": 0.40,
                 }
 
                 # det_list = []
@@ -760,8 +760,9 @@ class G3App(App, ScreenManager):
                 #     print("[YOLO] Detected:", ", ".join(out))
 
                 # soglie
-                GRASPED_ACCEPT   = 0.90   # sopra → considerato davvero "Grasped"
-                NOT_MIN_CONF     = 0.30   # sotto → scarto del tutto
+                GRASPED_ACCEPT   = 0.6   # sopra → considerato davvero "Grasped"
+                NOT_MIN_CONF     = 0.45   # sotto → scarto del tutto
+                NOT_GRASPED_ACCEPT = 0.6    # sopra → considerato davvero "Not Grasped"
 
                 det_list = []
                 if boxes is None or len(boxes) == 0:
@@ -784,14 +785,14 @@ class G3App(App, ScreenManager):
                             if p >= GRASPED_ACCEPT:
                                 # ok, resta Grasped
                                 label = "Box-Grasped"
-                            elif p >= NOT_MIN_CONF:
-                                # Grasped ma sotto soglia → trattalo come Not Grasped
-                                label = "Box-Not Grasped"
+                            # elif p >= NOT_MIN_CONF:
+                            #     # Grasped ma sotto soglia → trattalo come Not Grasped
+                            #     label = "Box-Not Grasped"
                             else:
                                 # troppo poco affidabile → scarto
                                 continue
                         elif raw_label == "Box-Not Grasped":
-                            if p >= NOT_MIN_CONF:
+                            if p >= NOT_GRASPED_ACCEPT:
                                 label = "Box-Not Grasped"
                             else:
                                 continue
@@ -1170,6 +1171,10 @@ class G3App(App, ScreenManager):
                         label_text = str(d.get("label", "")).strip()
                         if not label_text:
                             continue
+                        if label_text == "Box-Grasped":
+                            label_text = "grasped"
+                        elif label_text == "Box-Not Grasped":
+                            label_text = "not_grasped"
 
                         font = cv2.FONT_HERSHEY_SIMPLEX
                         font_scale = 0.6

@@ -1,0 +1,396 @@
+commit 81d4f9a83539bab3484a7c36d1ead5d45ae05a2f
+Author: Yanchen <yanchen.wu@mail.polimi.it>
+Date:   Thu Apr 9 15:26:07 2026 +0200
+
+    Add offline testing pipeline with YOLO integration and CSV logging
+
+diff --git a/exo_control/exo_control/README.md b/exo_control/exo_control/README.md
+new file mode 100644
+index 0000000..fb82d06
+--- /dev/null
++++ b/exo_control/exo_control/README.md
+@@ -0,0 +1,155 @@
++# Perception Pipeline (YOLO + ROI + VLM)
++
++This project implements a perception pipeline for object understanding:
++
++YOLO → ROI Cropping → Vision-Language Model (Qwen2.5-VL)
++
++The system is designed for real-time use with Tobii glasses, while also supporting offline testing using image datasets.
++
++---
++
++## Project Structure
++
++project_root/
++│
++├── pipeline/
++│   ├── perception_pipeline.py
++│   ├── qwen_inference.py
++│   ├── roi_selector.py
++│   └── output_parser.py
++│
++├── tobbi_vlm/
++│   └── __main__.py
++│
++├── test_pipeline.py
++├── README.md
++└── pipeline_log.csv
++
++---
++
++## Requirements
++
++- Python 3.10+
++- PyTorch
++- Ultralytics YOLOv8
++- Transformers
++- CUDA (recommended)
++
++---
++
++## Running Modes
++
++There are two different ways to run this project.
++
++---
++
++### 1. Real-Time Mode (Tobii Glasses)
++
++Entry point:
++
++
++python tobbi_vlm/__main__.py
++
++Description:
++
++This mode is designed for real-time perception using:
++
++- Tobii eye-tracking glasses 
++- Live camera stream 
++- ROS2 communication 
++
++This mode does not support offline image testing because it depends on:
++
++- real-time frame input 
++- gaze-trigger logic 
++- ROS node execution 
++
++Requirements:
++
++- Tobii glasses connected 
++- ROS2 environment properly set up 
++- Camera stream available 
++
++---
++
++### 2. Offline Testing Mode (Recommended for Development)
++
++To evaluate the perception pipeline on a dataset, use:
++
++python test_pipeline.py
++
++What This Script Does:
++
++- Loads images from a folder 
++- Runs YOLO detection 
++- Converts detections to pipeline format 
++- Runs the perception pipeline:
++  - ROI cropping 
++  - Qwen2.5-VL inference 
++  - JSON parsing 
++- Saves logs to:
++
++pipeline_log.csv
++
++---
++
++## Configuration
++
++Inside test_pipeline.py, modify:
++
++IMAGE_DIR = "/path/to/your/images" 
++YOLO_WEIGHTS = "/path/to/yolo/best.pt" 
++QWEN_MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct" 
++
++---
++
++## Important Notes
++
++1. Stability Constraint
++
++The pipeline uses a stability constraint:
++
++self.stable_frames_required = 2
++
++For offline testing, this must be disabled, otherwise the VLM may never be triggered.
++
++Add in test_pipeline.py:
++
++pipeline.stable_frames_required = 0
++
++2. "grasped" Class Requirement
++
++The pipeline only runs VLM when:
++
++class == "grasped"
++
++If your dataset contains only "not_grasped":
++
++- VLM will not be triggered 
++- CSV will still be written, but results will be empty 
++
++For offline testing, you can force all detections to be treated as grasped:
++
++det["class"] = "grasped"
++
++3. CSV Output
++
++Each run appends results to:
++
++pipeline_log.csv
++
++Columns include:
++
++- latency 
++- VLM call count 
++- trigger status 
++- skip reason 
++- number of detected objects 
++
++---
++
++## Recommended Testing Setup
++
++PIPELINE_MODE = "bbox" 
++pipeline.stable_frames_required = 0 
++ONLY_USE_GRASPED = False 
+diff --git a/exo_control/exo_control/pipeline/perception_pipeline.py b/exo_control/exo_control/pipeline/perception_pipeline.py
+index f33cc39..15e989b 100644
+--- a/exo_control/exo_control/pipeline/perception_pipeline.py
++++ b/exo_control/exo_control/pipeline/perception_pipeline.py
+@@ -165,10 +165,6 @@ class PerceptionPipeline:
+         ])
+         self.csv_file.flush()
+ 
+-return {
+-    ...
+-}
+-
+         return {
+             "mode": "bbox_trigger",
+             "pipeline_latency_ms": pipeline_latency_ms,
+@@ -301,11 +297,12 @@ return {
+                 "triggered_this_run",
+                 "skip_reason",
+                 "num_objects"
++                ])
+                 
+                 
+     def close(self):
+         if hasattr(self, "csv_file"):
+-            self.csv_file.close()    ])
++            self.csv_file.close()    
+             
+     
+     def run(self, frame, detections, mode="grasp_episode"):
+diff --git a/exo_control/exo_control/test_pipeline.py b/exo_control/exo_control/test_pipeline.py
+new file mode 100644
+index 0000000..ec45ae3
+--- /dev/null
++++ b/exo_control/exo_control/test_pipeline.py
+@@ -0,0 +1,150 @@
++import os
++from pathlib import Path
++from typing import List, Dict, Any
++
++from PIL import Image
++from ultralytics import YOLO
++
++from pipeline.qwen_inference import Qwen2_5VLBackend
++from pipeline.perception_pipeline import PerceptionPipeline
++
++
++# ================= CONFIG =================
++IMAGE_DIR = "/workspace/test_images"          # change it to image folder
++YOLO_WEIGHTS = "/workspace/models/yolov8/best.pt"
++QWEN_MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
++
++YOLO_CONF = 0.30
++PIPELINE_MODE = "bbox"          # 
++FORCE_STABLE_FRAMES = 0         #  set to 0 to get rid of the stable frame gate in perception pipeline
++ONLY_USE_GRASPED = False        # False = 保留两类；True = 只保留 grasped
++# ==========================================
++
++
++def is_image_file(path: Path) -> bool:
++    return path.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
++
++
++def collect_images(folder: str) -> List[Path]:
++    folder_path = Path(folder)
++    if not folder_path.exists():
++        raise FileNotFoundError(f"Folder not found: {folder}")
++    if not folder_path.is_dir():
++        raise NotADirectoryError(f"Not a directory: {folder}")
++    return sorted([p for p in folder_path.iterdir() if p.is_file() and is_image_file(p)])
++
++
++def map_yolo_label(raw_label: str) -> str | None:
++    if raw_label == "grasped":
++        return "grasped"
++    if raw_label == "not_grasped":
++        return "not_grasped"
++    return None
++
++
++def yolo_to_pipeline_detections(result, only_use_grasped: bool = False) -> List[Dict[str, Any]]:
++    detections: List[Dict[str, Any]] = []
++
++    boxes = result.boxes
++    if boxes is None or len(boxes) == 0:
++        return detections
++
++    names = result.names
++
++    for b in boxes:
++        cls_id = int(b.cls[0])
++        conf = float(b.conf[0])
++        raw_label = names.get(cls_id, str(cls_id))
++        mapped = map_yolo_label(raw_label)
++
++        if mapped is None:
++            continue
++        if only_use_grasped and mapped != "grasped":
++            continue
++
++        xyxy = b.xyxy[0].detach().cpu().numpy().astype(int).tolist()
++        detections.append(
++            {
++                "bbox": tuple(xyxy),
++                "class": mapped,
++                "confidence": conf,
++            }
++        )
++
++    return detections
++
++
++def main() -> None:
++    image_paths = collect_images(IMAGE_DIR)
++    print(f"Found {len(image_paths)} image(s)")
++
++    print("Loading YOLO...")
++    yolo = YOLO(YOLO_WEIGHTS)
++
++    print("Loading Qwen backend...")
++    backend = Qwen2_5VLBackend(QWEN_MODEL_ID)
++    pipeline = PerceptionPipeline(backend)
++
++    # close the stable frame test in offline test
++    pipeline.stable_frames_required = FORCE_STABLE_FRAMES
++
++    try:
++        for idx, img_path in enumerate(image_paths, start=1):
++            print("\n" + "=" * 90)
++            print(f"[{idx}/{len(image_paths)}] Processing: {img_path.name}")
++
++            frame = Image.open(img_path).convert("RGB")
++
++            yolo_results = yolo.predict(
++                source=str(img_path),
++                conf=YOLO_CONF,
++                verbose=False
++            )
++            result0 = yolo_results[0]
++
++            detections = yolo_to_pipeline_detections(
++                result0,
++                only_use_grasped=ONLY_USE_GRASPED,
++            )
++
++            print(f"YOLO detections: {len(detections)}")
++            for i, det in enumerate(detections, start=1):
++                print(
++                    f"  {i}. class={det['class']}, "
++                    f"conf={det['confidence']:.3f}, bbox={det['bbox']}"
++                )
++
++            pipeline_result = pipeline.run(
++                frame,
++                detections,
++                mode=PIPELINE_MODE,
++            )
++
++            print("Pipeline summary:")
++            print(f"  mode: {pipeline_result['mode']}")
++            print(f"  latency_ms: {pipeline_result['pipeline_latency_ms']:.2f}")
++            print(f"  vlm_call_count_this_run: {pipeline_result['vlm_call_count_this_run']}")
++            print(f"  total_vlm_call_count: {pipeline_result['total_vlm_call_count']}")
++            print(f"  triggered_this_run: {pipeline_result['triggered_this_run']}")
++            print(f"  skip_reason: {pipeline_result['skip_reason']}")
++            print(f"  num_objects: {pipeline_result['num_objects']}")
++
++            if pipeline_result["results"]:
++                for j, obj in enumerate(pipeline_result["results"], start=1):
++                    print(f"  Object {j}:")
++                    print(f"    object_name: {obj['object_name']}")
++                    print(f"    weight_level: {obj['weight_level']}")
++                    print(f"    fragility_level: {obj['fragility_level']}")
++                    print(f"    json_ok: {obj['json_ok']}")
++                    print(f"    vlm_ms: {obj['vlm_ms']:.2f}")
++                    print(f"    raw_output: {obj['raw_output']}")
++            else:
++                print("  No VLM result for this image.")
++
++    finally:
++        pipeline.close()
++        print("\nClosed pipeline CSV file.")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/exo_control/exo_control/tobii_vlm/__main__.py b/exo_control/exo_control/tobii_vlm/__main__.py
+index 69d7adc..0f4db58 100644
+--- a/exo_control/exo_control/tobii_vlm/__main__.py
++++ b/exo_control/exo_control/tobii_vlm/__main__.py
+@@ -9,6 +9,8 @@ from typing import List, Optional, Set, Tuple, cast
+ 
+ import aiohttp
+ import numpy as np
++from pipeline.qwen_inference import Qwen2_5VLBackend
++from pipeline.perception_pipeline import PerceptionPipeline
+ from eventkinds import AppEventKind, ControlEventKind
+ from kivy.app import App
+ from kivy.clock import Clock
+@@ -816,7 +818,7 @@ class G3App(App, ScreenManager):
+                         cls = "grasped"
+                     elif label == "Box-Not Grasped":
+                         cls = "not_grasped"
+-                    if cls = None:
++                    if cls is None:
+                         continue
+                         
+                     pipeline_dets.append(
+@@ -916,8 +918,8 @@ class G3App(App, ScreenManager):
+ 
+             except asyncio.CancelledError:
+                 print("[YOLO] Loop cancelled, closing pipeline CSV...")
+-                    if getattr(self, "pipeline", None) is not None:
+-                         self.pipeline.close()
++                if getattr(self, "pipeline", None) is not None:
++                    self.pipeline.close()
+                 break
+             except Exception as e:
+                 print(f"[YOLO] Error during inference: {e}")
+@@ -1075,8 +1077,8 @@ class G3App(App, ScreenManager):
+                         print("[YOLO] Using CUDA" if torch.cuda.is_available() else "[YOLO] Using CPU")
+                     if self.qwen_backend is None:
+                         self.qwen_backend = Qwen2_5VLBackend("Qwen/Qwen2.5-VL-7B-Instruct")
+-                    if self.pipeline = None:
+-                        self.pipeline = perceptionPipeline(self.qwen_backend)
++                    if self.pipeline is None:
++                        self.pipeline = PerceptionPipeline(self.qwen_backend)
+ 
+                     if self._yolo_task is None or self._yolo_task.done():
+                         self._yolo_task = self.create_task(self._yolo_loop(conf=0.3, rate_hz=3.0), name="yolo_loop") # conf=0.7

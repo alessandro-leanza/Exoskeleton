@@ -40,6 +40,7 @@ class MoteusDualControllerNode(Node):
         
         self.command_pos_rad = 0.0
         self.is_running = True
+        self._destroying = False
 
         # Custom Query Resolution
         self.qr = moteus.QueryResolution()
@@ -67,6 +68,8 @@ class MoteusDualControllerNode(Node):
             self.command_pos_rad = msg.data[0]
 
     def publish_joint_states(self, results):
+        if not self.is_running or self._destroying or (not rclpy.ok()):
+            return
         if not results or len(results) < 2:
             return
             
@@ -133,18 +136,31 @@ class MoteusDualControllerNode(Node):
                     self.publish_joint_states(results)
                     
                     # Check for faults
+                    motor_ids = (self.motor_id_1, self.motor_id_2)
                     for i, res in enumerate(results):
                         fault = res.values[moteus.Register.FAULT]
                         if fault != 0:
-                            self.get_logger().error(f"Motor {commands[i].id} Fault: {fault}")
+                            self.get_logger().error(f"Motor {motor_ids[i]} Fault: {fault}")
 
             except Exception as e:
-                self.get_logger().warn(f"CAN Communication error: {e}")
+                if self.is_running and rclpy.ok():
+                    self.get_logger().warn(f"CAN Communication error: {e}")
 
             await asyncio.sleep(0.01) # ~100Hz
 
         # Final safety stop
         await transport.cycle([c1.make_stop(), c2.make_stop()])
+
+    def stop_moteus_thread(self, timeout_s: float = 2.0):
+        if not self.is_running:
+            return
+        self.is_running = False
+        try:
+            self.moteus_loop.call_soon_threadsafe(lambda: None)
+        except Exception:
+            pass
+        if self.moteus_thread.is_alive():
+            self.moteus_thread.join(timeout=timeout_s)
 
 def main(args=None):
     rclpy.init(args=args)
@@ -154,7 +170,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.is_running = False
+        node._destroying = True
+        node.stop_moteus_thread()
         node.destroy_node()
         rclpy.shutdown()
 
