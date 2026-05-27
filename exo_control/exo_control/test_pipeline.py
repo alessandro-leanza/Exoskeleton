@@ -118,6 +118,7 @@ def main() -> None:
                 frame,
                 detections,
                 mode=PIPELINE_MODE,
+                image_path=str(img_path),
             )
 
             print("Pipeline summary:")

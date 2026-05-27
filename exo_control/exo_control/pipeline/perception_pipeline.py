@@ -59,7 +59,7 @@ class PerceptionPipeline:
 
         
 
-    def run_bbox_trigger_mode(self, frame, detections) -> Dict[str, Any]:
+    def run_bbox_trigger_mode(self, frame, detections, image_path="") -> Dict[str, Any]:
         self.total_run_count += 1
         vlm_call_count_this_run = 0
         triggered_this_run = False
@@ -154,6 +154,7 @@ class PerceptionPipeline:
 
 
         pipeline_latency_ms = (time.time() - pipeline_start) * 1000
+        first = results[0] if results else {}
         self.csv_writer.writerow([
             "bbox_trigger",
             pipeline_latency_ms,
@@ -161,7 +162,13 @@ class PerceptionPipeline:
             self.total_vlm_call_count,
             triggered_this_run,
             skip_reason,
-            len(results)
+            len(results),
+            image_path,
+            first.get("object_name", ""),
+            first.get("weight_level", ""),
+            first.get("fragility_level", ""),
+            first.get("json_ok", ""),
+            first.get("vlm_ms", ""),
         ])
         self.csv_file.flush()
 
@@ -176,7 +183,7 @@ class PerceptionPipeline:
             "results": results,
         }
     
-    def run_grasp_episode_trigger_mode(self, frame, detections) -> Dict[str, Any]:
+    def run_grasp_episode_trigger_mode(self, frame, detections, image_path="") -> Dict[str, Any]:
         self.total_run_count += 1
         vlm_call_count_this_run = 0
         triggered_this_run = False
@@ -261,6 +268,7 @@ class PerceptionPipeline:
             self.vlm_triggered_in_current_grasp = False
 
         pipeline_latency_ms = (time.time() - pipeline_start) * 1000.0
+        first = results[0] if results else {}
         self.csv_writer.writerow([
             "grasp_episode",
             pipeline_latency_ms,
@@ -268,7 +276,13 @@ class PerceptionPipeline:
             self.total_vlm_call_count,
             triggered_this_run,
             skip_reason,
-            len(results)
+            len(results),
+            image_path,
+            first.get("object_name", ""),
+            first.get("weight_level", ""),
+            first.get("fragility_level", ""),
+            first.get("json_ok", ""),
+            first.get("vlm_ms", ""),
         ])
         self.csv_file.flush()
         return {
@@ -296,7 +310,13 @@ class PerceptionPipeline:
                 "total_vlm_call_count",
                 "triggered_this_run",
                 "skip_reason",
-                "num_objects"
+                "num_objects",
+                "image_path",
+                "object_name",
+                "weight_level",
+                "fragility_level",
+                "json_ok",
+                "vlm_ms",
                 ])
                 
                 
@@ -305,11 +325,11 @@ class PerceptionPipeline:
             self.csv_file.close()    
             
     
-    def run(self, frame, detections, mode="grasp_episode"):
+    def run(self, frame, detections, mode="grasp_episode", image_path=""):
         if mode == "bbox":
-            return self.run_bbox_trigger_mode(frame, detections)
+            return self.run_bbox_trigger_mode(frame, detections, image_path=image_path)
         elif mode == "grasp_episode":
-            return self.run_grasp_episode_trigger_mode(frame, detections)
+            return self.run_grasp_episode_trigger_mode(frame, detections, image_path=image_path)
         else:
             raise ValueError(f"Unknown mode: {mode}")
         
