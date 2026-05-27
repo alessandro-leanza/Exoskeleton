@@ -12,7 +12,7 @@ class PerceptionPipeline:
     YOLO → ROI → Qwen2.5-VL pipeline
     """
 
-    def __init__(self, qwen_model):
+    def __init__(self, qwen_model, csv_path="pipeline_log.csv"):
         self.qwen = qwen_model
         
         ##------------parameters----------##
@@ -35,7 +35,7 @@ class PerceptionPipeline:
         self.total_run_count = 0
         
         #----------exporting .csv log----------------
-        self.csv_path = "pipeline_log.csv"
+        self.csv_path = csv_path
         self._init_csv()
         
         

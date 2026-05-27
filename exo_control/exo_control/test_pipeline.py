@@ -1,6 +1,7 @@
 import csv
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Generator, List, Dict, Any, Optional, Tuple
 
@@ -54,7 +55,7 @@ GROUND_TRUTH = {
         "fragility": "LOW",      # cardboard deforms but does not break
     },
 }
-EVAL_LOG_PATH = "evaluation_log.csv"
+OUTPUT_DIR = "results"   # folder where all CSVs are saved
 # ==========================================
 
 
@@ -115,6 +116,18 @@ def frames_from_video(video_path: str, sample_hz: float) -> Generator[Tuple[Imag
 # ------------------------------------------------------------------
 # Ground truth & evaluation helpers
 # ------------------------------------------------------------------
+
+def make_output_paths(output_dir: str, pipeline_mode: str, source: str) -> tuple[str, str]:
+    """Return (pipeline_log_path, eval_log_path) with unique timestamped names."""
+    os.makedirs(output_dir, exist_ok=True)
+    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    mode = pipeline_mode.replace("_", "-")   # e.g. "grasp-episode"
+    base = f"{source}_{mode}_{ts}"
+    return (
+        os.path.join(output_dir, f"pipeline_log_{base}.csv"),
+        os.path.join(output_dir, f"evaluation_log_{base}.csv"),
+    )
+
 
 def match_ground_truth(object_name: str) -> Optional[Dict[str, Any]]:
     name_lower = object_name.lower()
@@ -188,30 +201,34 @@ def yolo_to_pipeline_detections(result, only_use_grasped: bool = False) -> List[
 def main() -> None:
     # --- choose input source ---
     if VIDEO_PATH:
+        source_tag   = "video"
         source_label = f"VIDEO  {VIDEO_PATH}  @ {SAMPLE_HZ} Hz"
         frame_source = frames_from_video(VIDEO_PATH, SAMPLE_HZ)
         stable_frames = FORCE_STABLE_FRAMES if FORCE_STABLE_FRAMES != 0 else 2
-        print(f"Video mode: FORCE_STABLE_FRAMES overridden to {stable_frames} "
-              f"(set FORCE_STABLE_FRAMES explicitly to override)")
         if FORCE_STABLE_FRAMES != 0:
             stable_frames = FORCE_STABLE_FRAMES
     else:
+        source_tag   = "images"
         source_label = f"IMAGES  {IMAGE_DIR}"
         frame_source = frames_from_images(IMAGE_DIR)
         stable_frames = FORCE_STABLE_FRAMES
 
+    pipeline_log_path, eval_log_path = make_output_paths(OUTPUT_DIR, PIPELINE_MODE, source_tag)
+
     print(f"Input:  {source_label}")
     print(f"Mode:   {PIPELINE_MODE}   stable_frames={stable_frames}")
+    print(f"Output: {pipeline_log_path}")
+    print(f"        {eval_log_path}")
 
     print("Loading YOLO...")
     yolo = YOLO(YOLO_WEIGHTS)
 
     print("Loading Qwen backend...")
     backend  = Qwen2_5VLBackend(QWEN_MODEL_ID)
-    pipeline = PerceptionPipeline(backend)
+    pipeline = PerceptionPipeline(backend, csv_path=pipeline_log_path)
     pipeline.stable_frames_required = stable_frames
 
-    eval_file, eval_writer = init_eval_csv(EVAL_LOG_PATH)
+    eval_file, eval_writer = init_eval_csv(eval_log_path)
 
     total = triggered = weight_ok = fragility_ok = no_gt_match = json_fail = 0
     total_yolo_ms = 0.0
@@ -309,8 +326,8 @@ def main() -> None:
         if n_with_gt > 0:
             print(f"  Weight accuracy:       {weight_ok}/{n_with_gt}  ({100*weight_ok/n_with_gt:.1f}%)")
             print(f"  Fragility accuracy:    {fragility_ok}/{n_with_gt}  ({100*fragility_ok/n_with_gt:.1f}%)")
-        print(f"  Eval log:              {EVAL_LOG_PATH}")
-        print(f"  Pipeline log:          pipeline_log.csv")
+        print(f"  Eval log:              {eval_log_path}")
+        print(f"  Pipeline log:          {pipeline_log_path}")
 
 
 if __name__ == "__main__":
