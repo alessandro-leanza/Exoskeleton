@@ -1,4 +1,59 @@
-# Exoskeleton 
+# Context-Aware Exoskeleton Assistance
+
+A research framework connecting egocentric vision and gaze tracking with
+variable-admittance control for an active back-support exoskeleton. Task-context
+cues complement the user's posture to inform **when assistance starts** and
+**how much support is delivered** during manual handling.
+
+[Project overview](https://alessandro-leanza.github.io/projects/exoskeleton/) ·
+[Earlier preprint (arXiv)](https://arxiv.org/abs/2602.04648)
+
+## Perception–control architecture
+
+<p align="center">
+  <a href="images/architecture.png">
+    <img src="images/architecture.png" alt="High-level perception provides visual grasp-state and payload cues to a finite-state machine and variable-admittance controller, which drives the back-support exoskeleton" width="1000">
+  </a>
+</p>
+
+- **Attend:** egocentric vision and gaze associate the user's attention with the
+  objects visible through the Tobii glasses.
+- **Interpret:** visual grasp-state cues inform task progression; asynchronous
+  vision-language inference estimates payload information in the experimental
+  framework without blocking the time-critical assistance gate.
+- **Assist:** a finite-state policy combines perception and posture with
+  variable-admittance control, adapting assistance and interaction parameters.
+
+## Selected experimental results
+
+The evaluations below concern controlled laboratory stooping and lifting tasks.
+The linked arXiv preprint is an earlier version and may not contain all figures
+or experimental results summarized here.
+
+| Evaluation | Selected finding | Sample and comparison |
+| --- | --- | --- |
+| Gaze ablation | Mean payload-aware assistance-onset delay: **0.066 ± 0.033 s** with gaze versus **1.892 ± 0.040 s** without gaze; mean anticipation **1.826 s** | One participant, 50 randomized trials per condition. Onset is referenced to the first YOLO detection of the object as grasped, not a direct measurement of physical load transfer. |
+| Questionnaire | Physical-demand Q1 score: **3.60 / 4** with vision gating, **2.13 / 4** with posture-only assistance, **2.00 / 4** without the exoskeleton. Higher means less perceived physical demand. | 15 participants; five repetitions per condition. These ratings evaluate the integrated assistance strategy. |
+| Preliminary EMG | Loaded-condition envelope RMS reduction: **14.29%** for thoracic and **14.63%** for lumbar erector spinae | Five participants; complete vision-enabled exoskeleton versus no exoskeleton during loaded lifting. |
+
+The preliminary EMG study did not include a posture-only assistance condition,
+so these muscular-activation reductions cannot be independently attributed to
+gaze or vision gating. The current experiments also do not independently separate
+task-phase anticipation from payload-dependent torque adaptation. These findings
+do not establish performance across arbitrary users, objects, or environments.
+
+## Experimental setup
+
+<p align="center">
+  <a href="images/setup.webp">
+    <img src="images/setup.webp" alt="Participant lifting a box while wearing the active back-support exoskeleton and Tobii glasses; an inset shows the egocentric view and gaze point" width="340">
+  </a>
+</p>
+
+*Back-support exoskeleton during the lifting task. Click either figure to view it
+at full resolution. See [images/README.md](images/README.md) for figure provenance.*
+
+## Control stack and setup
 
 This repository contains the ROS 2 / Moteus / Tobii-based control stack for a back-support exoskeleton.
 
