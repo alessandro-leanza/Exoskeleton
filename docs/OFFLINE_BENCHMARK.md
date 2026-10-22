@@ -1,25 +1,28 @@
-# Benchmark Guide — Yanchen
+# Offline perception benchmark
 
-This document explains what was added on top of your pipeline code, what inputs are required, how to run the benchmark tests, and what you get as output.
+[Project overview](../README.md) · [Laboratory setup](SETUP.md)
 
-The real-time test (Tobii glasses + ROS2 live) is handled by the supervisor. Your job is the offline benchmark described here.
+Evaluate the YOLO → ROI → Qwen2.5-VL perception pipeline on images or recorded
+video, without connecting the exoskeleton or starting ROS. This guide covers
+inputs, configuration, benchmark runs, and CSV outputs. It does not reproduce
+the human-subject studies summarized in the project overview.
 
 ---
 
-## What was modified from your original code
+## Benchmark capabilities
 
 ### `exo_control/exo_control/pipeline/perception_pipeline.py`
 
-| Change | Detail |
+| Capability | Detail |
 |--------|--------|
 | CSV now logs VLM predictions | Added columns: `image_path`, `object_name`, `weight_level`, `fragility_level`, `json_ok`, `vlm_ms` |
 | CSV path is configurable | Constructor now accepts `csv_path` parameter so each run writes its own file |
 
-Before, the CSV only logged latency and trigger counts. VLM predictions (the actual weight/fragility output) were only printed to console and lost.
+The CSV retains VLM predictions alongside latency and trigger counts.
 
 ### `exo_control/exo_control/test_pipeline.py`
 
-This file was rewritten. New features:
+The offline runner supports:
 
 | Feature | Detail |
 |---------|--------|
@@ -47,7 +50,8 @@ YOLO_WEIGHTS = "/path/to/your/model.pt"
 
 ### 2. Extend the ground truth
 
-The `GROUND_TRUTH` dict currently has 3 objects defined by the supervisor (screwdriver, drill, box). Add your objects following the same format:
+The `GROUND_TRUTH` dict contains three configured example objects (screwdriver,
+drill, box). Set labels for your evaluation objects following the same format:
 
 ```python
 GROUND_TRUTH = {
@@ -219,17 +223,17 @@ BENCHMARK SUMMARY
 
 ---
 
-## What the 4 runs give you for the thesis
+## Comparing the four runs
 
-| Run | Input | Mode | Thesis metric |
+| Run | Input | Mode | Metric |
 |-----|-------|------|---------------|
 | 1 | Roboflow images | bbox | Weight accuracy, fragility accuracy, VLM latency |
 | 2 | Roboflow images | grasp_episode | Same metrics, different trigger strategy |
 | 3 | Video | bbox | Trigger rate, YOLO+VLM latency in realistic temporal conditions |
 | 4 | Video | grasp_episode | Same, for comparison with bbox |
 
-Comparing runs 1 vs 2: which trigger strategy gives more VLM calls for the same image set?  
-Comparing runs 3 vs 4: same question but on a realistic video sequence with stability gate active.  
+Comparing runs 1 vs 2: which trigger strategy gives more VLM calls for the same image set?
+Comparing runs 3 vs 4: same question but on a realistic video sequence with stability gate active.
 Comparing runs 1 vs 2 on accuracy: does the trigger strategy affect which detections reach the VLM?
 
 ---
